@@ -1,0 +1,6 @@
+{
+    "name": "moonfin-service",
+    "version": "1.0.0",
+    "description": "Moonfin background service for Jellyseerr proxy",
+    "main": "service.js"
+}
