@@ -4,78 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moonfin for Tizen</title>
-    <style>
-        #debugPanel {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            width: 500px;
-            max-height: 400px;
-            background: rgba(0,0,0,0.9);
-            color: #0f0;
-            font-family: monospace;
-            font-size: 12px;
-            padding: 10px;
-            overflow-y: auto;
-            z-index: 999999;
-            border: 1px solid #0f0;
-        }
-        #debugPanel .error { color: #f00; }
-        #debugPanel .warn { color: #ff0; }
-    </style>
-    <script>
-        // Debug panel - captures all console output
-        (function() {
-            var logs = [];
-            var panel = null;
-            
-            function createPanel() {
-                panel = document.createElement('div');
-                panel.id = 'debugPanel';
-                panel.innerHTML = '<b>DEBUG LOG</b><br>';
-                document.body.appendChild(panel);
-            }
-            
-            function addLog(type, args) {
-                var msg = Array.prototype.slice.call(args).map(function(a) {
-                    if (typeof a === 'object') {
-                        try { return JSON.stringify(a); } catch(e) { return String(a); }
-                    }
-                    return String(a);
-                }).join(' ');
-                
-                logs.push({ type: type, msg: msg, time: new Date().toLocaleTimeString() });
-                if (logs.length > 50) logs.shift();
-                
-                if (panel) {
-                    var div = document.createElement('div');
-                    div.className = type;
-                    div.textContent = '[' + logs[logs.length-1].time + '] ' + msg;
-                    panel.appendChild(div);
-                    panel.scrollTop = panel.scrollHeight;
-                }
-            }
-            
-            var origLog = console.log;
-            var origError = console.error;
-            var origWarn = console.warn;
-            
-            console.log = function() { origLog.apply(console, arguments); addLog('log', arguments); };
-            console.error = function() { origError.apply(console, arguments); addLog('error', arguments); };
-            console.warn = function() { origWarn.apply(console, arguments); addLog('warn', arguments); };
-            
-            window.onerror = function(msg, url, line, col, error) {
-                addLog('error', ['UNCAUGHT: ' + msg + ' at ' + url + ':' + line]);
-            };
-            
-            document.addEventListener('DOMContentLoaded', function() {
-                createPanel();
-                console.log('DOM Ready');
-            });
-            
-            console.log('Debug panel initialized');
-        })();
-    </script>
     <link rel="stylesheet" href="css/legacy-compat.css">
     <link rel="stylesheet" href="css/navbar.css">
     <link rel="stylesheet" href="css/browse.css">
@@ -167,9 +95,5 @@
             <button id="logoutBtn" class="btn-secondary" tabindex="0">Logout</button>
         </div>
     </div>
-
-    <script>
-        // Keyboard navigation is handled in browse.js
-    </script>
 </body>
 </html>
