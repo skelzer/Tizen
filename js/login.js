@@ -156,7 +156,10 @@ var LoginController = (function() {
         if (elements.connectBtn) {
             elements.connectBtn.addEventListener('click', handleConnect);
             elements.connectBtn.addEventListener('keydown', function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    handleConnect();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     if (elements.serverUrlInput) {
                         elements.serverUrlInput.focus();
@@ -172,7 +175,10 @@ var LoginController = (function() {
         if (elements.backToServerListBtn) {
             elements.backToServerListBtn.addEventListener('click', backToServerSelection);
             elements.backToServerListBtn.addEventListener('keydown', function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    backToServerSelection();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     if (elements.serverUrlInput) {
                         elements.serverUrlInput.focus();
@@ -201,26 +207,68 @@ var LoginController = (function() {
         // Add New Server button
         if (elements.addNewServerBtn) {
             elements.addNewServerBtn.addEventListener('click', showAddServerForm);
+            elements.addNewServerBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showAddServerForm();
+                }
+            });
         }
         
         // Manual Login button
         if (elements.showManualLoginBtn) {
             elements.showManualLoginBtn.addEventListener('click', showManualLoginForm);
+            elements.showManualLoginBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showManualLoginForm();
+                }
+            });
         }
         if (elements.useManualPasswordBtn) {
             elements.useManualPasswordBtn.addEventListener('click', showManualPasswordForm);
+            elements.useManualPasswordBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showManualPasswordForm();
+                }
+            });
         }
         if (elements.useManualQuickConnectBtn) {
             elements.useManualQuickConnectBtn.addEventListener('click', showManualQuickConnectForm);
+            elements.useManualQuickConnectBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showManualQuickConnectForm();
+                }
+            });
         }
         if (elements.manualLoginBtn) {
             elements.manualLoginBtn.addEventListener('click', handleManualLogin);
+            elements.manualLoginBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    handleManualLogin();
+                }
+            });
         }
         if (elements.cancelManualLoginBtn) {
             elements.cancelManualLoginBtn.addEventListener('click', cancelManualLogin);
+            elements.cancelManualLoginBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    cancelManualLogin();
+                }
+            });
         }
         if (elements.cancelManualQuickConnectBtn) {
             elements.cancelManualQuickConnectBtn.addEventListener('click', cancelManualLogin);
+            elements.cancelManualQuickConnectBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    cancelManualLogin();
+                }
+            });
         }
         if (elements.manualPassword) {
             elements.manualPassword.addEventListener('keydown', function(e) {
@@ -231,21 +279,57 @@ var LoginController = (function() {
         // Login form listeners
         if (elements.useQuickConnectBtn) {
             elements.useQuickConnectBtn.addEventListener('click', showQuickConnectForm);
+            elements.useQuickConnectBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showQuickConnectForm();
+                }
+            });
         }
         if (elements.usePasswordBtn) {
             elements.usePasswordBtn.addEventListener('click', showPasswordForm);
+            elements.usePasswordBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showPasswordForm();
+                }
+            });
         }
         if (elements.loginBtn) {
             elements.loginBtn.addEventListener('click', handlePasswordLogin);
+            elements.loginBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    handlePasswordLogin();
+                }
+            });
         }
         if (elements.cancelLoginBtn) {
             elements.cancelLoginBtn.addEventListener('click', backToUserSelection);
+            elements.cancelLoginBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    backToUserSelection();
+                }
+            });
         }
         if (elements.cancelQuickConnectBtn) {
             elements.cancelQuickConnectBtn.addEventListener('click', backToUserSelection);
+            elements.cancelQuickConnectBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    backToUserSelection();
+                }
+            });
         }
         if (elements.manualLoginSubmitBtn) {
             elements.manualLoginSubmitBtn.addEventListener('click', handleManualLogin);
+            elements.manualLoginSubmitBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    handleManualLogin();
+                }
+            });
         }
         if (elements.manualUsername) {
             elements.manualUsername.addEventListener('keydown', function(e) {
@@ -289,9 +373,21 @@ var LoginController = (function() {
         }
         if (elements.deleteServerBtn) {
             elements.deleteServerBtn.addEventListener('click', deleteConnectedServer);
+            elements.deleteServerBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    deleteConnectedServer();
+                }
+            });
         }
         if (elements.backToServerBtn) {
             elements.backToServerBtn.addEventListener('click', backToServerSelection);
+            elements.backToServerBtn.addEventListener('keydown', function(e) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    backToServerSelection();
+                }
+            });
         }
         if (elements.passwordInput) {
             elements.passwordInput.addEventListener('keydown', function(e) {
@@ -511,7 +607,10 @@ var LoginController = (function() {
         // Add keyboard navigation for Add New Server button
         if (elements.addNewServerBtn) {
             var buttonHandler = function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showAddServerForm();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     var cards = elements.savedServerRow.querySelectorAll('.user-card');
                     if (cards.length > 0) {
@@ -1027,7 +1126,10 @@ var LoginController = (function() {
         // Button order: Manual Login -> Delete Server -> Back to Server Selection
         if (elements.showManualLoginBtn) {
             var manualLoginHandler = function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    showManualLoginForm();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     var cards = elements.userRow.querySelectorAll('.user-card');
                     if (cards.length > 0) {
@@ -1054,7 +1156,10 @@ var LoginController = (function() {
         
         if (elements.deleteServerBtn) {
             var deleteServerHandler = function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    deleteConnectedServer();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     var cards = elements.userRow.querySelectorAll('.user-card');
                     if (cards.length > 0) {
@@ -1078,7 +1183,10 @@ var LoginController = (function() {
         
         if (elements.backToServerBtn) {
             var backToServerHandler = function(e) {
-                if (e.keyCode === KeyCodes.UP) {
+                if (e.keyCode === KeyCodes.ENTER) {
+                    e.preventDefault();
+                    backToServerSelection();
+                } else if (e.keyCode === KeyCodes.UP) {
                     e.preventDefault();
                     var cards = elements.userRow.querySelectorAll('.user-card');
                     if (cards.length > 0) {
