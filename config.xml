@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="http://moonfin.org/Moonfin" version="1.0.0" viewmodes="fullscreen">
+<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="http://moonfin.org/Moonfin" version="1.1.0" viewmodes="maximized">
     <access origin="*" subdomains="true"></access>
-    <tizen:application id="MoonfinTizen.Moonfin" package="MoonfinTizen" required_version="2.3"/>
+    <tizen:application id="MoonfinApp.Moonfin" package="MoonfinApp" required_version="2.3"/>
     <author href="http://moonfin.org" email="apps@moonfin.org">Moonfin</author>
     <content src="browse.html"/>
     <description>Moonfin - A Jellyfin client for Samsung Smart TV (Tizen).</description>
     <feature name="http://tizen.org/feature/screen.size.all"/>
     <icon src="assets/icon-130.png"/>
-    <tizen:metadata key="http://tizen.org/metadata/app_ui_type/base_screen_resolution" value="fullscreen"/>
     <name>Moonfin</name>
     <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
     <tizen:privilege name="http://tizen.org/privilege/network.public"/>

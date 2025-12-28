@@ -33,7 +33,7 @@ function copyFiles() {
 
 // Package the build into a versioned .wgt file
 async function packageWgt() {
-    const versionedWgtName = `Moonfin-${version}.wgt`;
+    const versionedWgtName = `Moonfin-Tizen-${version}.wgt`;
     const wgtName = 'Moonfin.wgt';
     await del([versionedWgtName, wgtName]);
     
