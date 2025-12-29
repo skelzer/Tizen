@@ -1093,10 +1093,13 @@ class HTML5VideoAdapter extends VideoPlayerAdapter {
 
     /**
      * Load HLS stream using HLS.js with error recovery
+     * Configuration matches jellyfin-web for maximum compatibility
      * @private
      */
     loadWithHlsJs(url, options = {}) {
         return new Promise((resolve, reject) => {
+            console.log('[HTML5+HLS.js] Loading HLS stream:', url.substring(0, 100) + '...');
+            
             // Destroy existing HLS player
             if (this.hlsPlayer) {
                 try {
@@ -1107,57 +1110,162 @@ class HTML5VideoAdapter extends VideoPlayerAdapter {
                 this.hlsPlayer = null;
             }
 
-            const hls = new Hls({
+            // HLS.js configuration matching jellyfin-web settings
+            const hlsConfig = {
+                // Loading timeouts
                 manifestLoadingTimeOut: 20000,
-                startPosition: options.startPosition || 0,
-                xhrSetup: (xhr) => {
+                manifestLoadingMaxRetry: 4,
+                manifestLoadingRetryDelay: 1000,
+                levelLoadingTimeOut: 20000,
+                levelLoadingMaxRetry: 4,
+                levelLoadingRetryDelay: 1000,
+                fragLoadingTimeOut: 20000,
+                fragLoadingMaxRetry: 6,
+                fragLoadingRetryDelay: 1000,
+                
+                // Buffer settings for smooth playback
+                maxBufferLength: 30,
+                maxMaxBufferLength: 600,
+                maxBufferSize: 60 * 1000 * 1000, // 60 MB
+                maxBufferHole: 0.5,
+                
+                // Back buffer for seeking back
+                backBufferLength: 90,
+                liveBackBufferLength: 90,
+                
+                // Low latency mode disabled for VOD transcodes
+                lowLatencyMode: false,
+                
+                // Start position
+                startPosition: options.startPosition || -1,
+                
+                // ABR (Adaptive Bitrate) settings
+                abrEwmaDefaultEstimate: 5000000, // 5 Mbps default
+                abrEwmaFastLive: 3.0,
+                abrEwmaSlowLive: 9.0,
+                abrEwmaFastVoD: 3.0,
+                abrEwmaSlowVoD: 9.0,
+                abrBandWidthFactor: 0.95,
+                abrBandWidthUpFactor: 0.7,
+                enableWorker: true,
+                xhrSetup: (xhr, url) => {
                     xhr.withCredentials = options.withCredentials || false;
                 }
+            };
+
+            console.log('[HTML5+HLS.js] Initializing with config:', {
+                startPosition: hlsConfig.startPosition,
+                maxBufferLength: hlsConfig.maxBufferLength,
+                backBufferLength: hlsConfig.backBufferLength
             });
+
+            const hls = new Hls(hlsConfig);
+
+            let manifestParsed = false;
+            let hasError = false;
 
             hls.loadSource(url);
             hls.attachMedia(this.videoElement);
 
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                console.log('[HTML5+HLS.js] Manifest parsed, starting playback');
-                this.videoElement.play().then(resolve).catch(reject);
+            hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+                manifestParsed = true;
+                console.log('[HTML5+HLS.js] Manifest parsed successfully');
+                console.log('[HTML5+HLS.js] Levels available:', data.levels.length);
+                if (data.levels.length > 0) {
+                    const level = data.levels[0];
+                    console.log('[HTML5+HLS.js] First level:', level.width + 'x' + level.height, '@', level.bitrate, 'bps');
+                }
+                console.log('[HTML5+HLS.js] Audio tracks:', data.audioTracks?.length || 0);
+                
+                // Start playback
+                this.videoElement.play()
+                    .then(() => {
+                        console.log('[HTML5+HLS.js] Playback started');
+                        resolve();
+                    })
+                    .catch((err) => {
+                        console.error('[HTML5+HLS.js] Play failed:', err);
+                        // Don't reject here - autoplay may be blocked but user can click play
+                        resolve();
+                    });
+            });
+
+            hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                console.log('[HTML5+HLS.js] Level loaded:', data.level, 'fragments:', data.details.fragments.length);
+            });
+
+            hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+                // Log first few fragments for debugging
+                if (data.frag.sn < 3) {
+                    console.log('[HTML5+HLS.js] Fragment loaded:', data.frag.sn, 'duration:', data.frag.duration.toFixed(2) + 's');
+                }
             });
 
             hls.on(Hls.Events.ERROR, (event, data) => {
-                console.error('[HTML5+HLS.js] Error:', data.type, data.details, 'fatal:', data.fatal);
+                console.error('[HTML5+HLS.js] Error:', data.type, data.details);
+                if (data.response) {
+                    console.error('[HTML5+HLS.js] Response:', data.response.code, data.response.text);
+                }
 
                 if (data.fatal) {
+                    hasError = true;
+                    console.error('[HTML5+HLS.js] Fatal error occurred');
+                    
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
-                            if (data.response && data.response.code >= 400) {
+                            // Try to recover from network errors
+                            if (data.response && data.response.code >= 400 && data.response.code < 500) {
+                                // 4xx errors are unrecoverable (auth, not found, etc.)
+                                console.error('[HTML5+HLS.js] Unrecoverable network error:', data.response.code);
                                 hls.destroy();
                                 this.emit('error', { type: MediaError.SERVER_ERROR, details: data });
-                                reject(new Error(MediaError.SERVER_ERROR));
+                                reject(new Error(MediaError.SERVER_ERROR + ': HTTP ' + data.response.code));
                             } else {
-                                console.log('[HTML5+HLS.js] Network error, attempting recovery...');
+                                // Try to recover from other network errors
+                                console.log('[HTML5+HLS.js] Attempting network error recovery...');
                                 hls.startLoad();
                             }
                             break;
+                            
                         case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log('[HTML5+HLS.js] Media error, attempting recovery...');
                             if (handleHlsJsMediaError(hls)) {
-                                console.log('[HTML5+HLS.js] Media error recovery attempted');
+                                console.log('[HTML5+HLS.js] Media error recovery initiated');
                             } else {
+                                console.error('[HTML5+HLS.js] Media error recovery exhausted');
                                 hls.destroy();
                                 this.emit('error', { type: MediaError.MEDIA_DECODE_ERROR, details: data });
                                 reject(new Error(MediaError.MEDIA_DECODE_ERROR));
                             }
                             break;
+                            
                         default:
+                            console.error('[HTML5+HLS.js] Unhandled fatal error type:', data.type);
                             hls.destroy();
                             this.emit('error', { type: MediaError.FATAL_HLS_ERROR, details: data });
-                            reject(new Error(MediaError.FATAL_HLS_ERROR));
+                            reject(new Error(MediaError.FATAL_HLS_ERROR + ': ' + data.details));
                             break;
                     }
+                } else {
+                    console.warn('[HTML5+HLS.js] Non-fatal error:', data.details);
                 }
+            });
+
+            hls.on(Hls.Events.FRAG_BUFFERED, () => {
+                this.emit('buffering', false);
             });
 
             this.hlsPlayer = hls;
             this.emit('loaded', { url });
+            
+            setTimeout(() => {
+                if (!manifestParsed && !hasError) {
+                    console.error('[HTML5+HLS.js] Manifest load timeout');
+                    hls.destroy();
+                    this.hlsPlayer = null;
+                    reject(new Error('HLS manifest load timeout'));
+                }
+            }, 30000);
         });
     }
 
@@ -1310,29 +1418,51 @@ class VideoPlayerFactory {
      * @param {Object} options - Creation options
      * @param {boolean} options.preferTizen - Prefer Tizen AVPlay adapter for HDR/Dolby Vision
      * @param {boolean} options.preferHTML5 - Prefer HTML5 video element for direct files
+     * @param {boolean} options.preferHLS - Prefer HLS.js (HTML5 adapter) for HLS streams
      * @returns {Promise<VideoPlayerAdapter>} Initialized player adapter
      */
     static async createPlayer(videoElement, options = {}) {
+        // Check if HLS.js is available for HLS streams
+        const hlsAvailable = typeof Hls !== 'undefined' && Hls.isSupported();
+        
+        // Log availability
+        console.log('[PlayerFactory] HLS.js available:', hlsAvailable);
+        console.log('[PlayerFactory] Options:', JSON.stringify(options));
+        
         // Determine adapter priority based on platform and playback needs
-        // For Tizen: TizenAVPlay > Shaka > HTML5
-        let adapters = [
-            TizenVideoAdapter,
-            ShakaPlayerAdapter,
-            HTML5VideoAdapter
-        ];
+        let adapters;
 
         if (options.preferTizen) {
             // For Dolby Vision/HDR: Tizen AVPlay > Shaka > HTML5
+            console.log('[PlayerFactory] Mode: Prefer Tizen (HDR/DV content)');
             adapters = [
                 TizenVideoAdapter,
                 ShakaPlayerAdapter,
                 HTML5VideoAdapter
             ];
+        } else if (options.preferHLS && hlsAvailable) {
+            // For HLS transcoded streams: HTML5+HLS.js > Shaka > Tizen
+            // This is the recommended path for transcoded content
+            console.log('[PlayerFactory] Mode: Prefer HLS.js for transcoded streams');
+            adapters = [
+                HTML5VideoAdapter,  // Will use HLS.js internally for .m3u8
+                ShakaPlayerAdapter,
+                TizenVideoAdapter
+            ];
         } else if (options.preferHTML5) {
             // For direct files: HTML5 > Shaka > Tizen
+            console.log('[PlayerFactory] Mode: Prefer HTML5 (direct play)');
             adapters = [
                 HTML5VideoAdapter,
                 ShakaPlayerAdapter,
+                TizenVideoAdapter
+            ];
+        } else {
+            // Default: Try Shaka first (handles DASH/HLS), then HTML5, then Tizen
+            console.log('[PlayerFactory] Mode: Default (Shaka preferred)');
+            adapters = [
+                ShakaPlayerAdapter,
+                HTML5VideoAdapter,
                 TizenVideoAdapter
             ];
         }

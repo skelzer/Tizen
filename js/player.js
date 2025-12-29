@@ -377,9 +377,13 @@ var PlayerController = (function () {
             if (options.preferHTML5 && name === "HTML5Video") {
                return;
             }
+            if (options.preferHLS && name === "HTML5Video") {
+               return;
+            }
             if (
                !options.preferTizen &&
                !options.preferHTML5 &&
+               !options.preferHLS &&
                name === "ShakaPlayer"
             ) {
                return;
@@ -388,15 +392,13 @@ var PlayerController = (function () {
          }
 
          showLoading();
-         console.log("[Player] Initializing video player adapter");
+         console.log("[Player] Adapter options:", JSON.stringify(options));
 
          playerAdapter = await VideoPlayerFactory.createPlayer(
             videoPlayer,
             options
          );
-         console.log("[Player] Using adapter:", playerAdapter.getName());
 
-         // Setup adapter event listeners
          playerAdapter.on("error", function (error) {
             onError(error);
          });
@@ -1159,6 +1161,9 @@ var PlayerController = (function () {
          creationOptions.preferTizen = true;
       } else if (useDirectPlay) {
          creationOptions.preferHTML5 = true;
+      } else if (isTranscoding) {
+         creationOptions.preferHLS = true;
+         console.log("[Player] Using HLS.js for transcoded stream");
       }
       await ensurePlayerAdapter(creationOptions);
 
