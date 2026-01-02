@@ -746,10 +746,19 @@ var PlayerController = (function () {
 
       var isLiveTV = itemData && itemData.Type === "TvChannel";
 
+      var deviceProfile = getDeviceProfile();
+      console.log('[Player] Device Profile Summary:', {
+         hasDirectPlayProfiles: deviceProfile && deviceProfile.DirectPlayProfiles && deviceProfile.DirectPlayProfiles.length > 0,
+         mkvSupported: deviceProfile && deviceProfile.DirectPlayProfiles ? deviceProfile.DirectPlayProfiles.some(p => p.Container && p.Container.includes('mkv')) : false,
+         firstProfile: deviceProfile && deviceProfile.DirectPlayProfiles && deviceProfile.DirectPlayProfiles[0]
+      });
+      console.log('[Player] MKV Profile:', deviceProfile && deviceProfile.DirectPlayProfiles ? deviceProfile.DirectPlayProfiles.find(p => p.Container && p.Container.includes('mkv')) : null);
+      console.log('[Player] Full device profile DirectPlayProfiles:', deviceProfile ? deviceProfile.DirectPlayProfiles : null);
+
       var requestData = {
          UserId: auth.userId,
          // Must include DeviceProfile so server knows what we can play
-         DeviceProfile: getDeviceProfile(),
+         DeviceProfile: deviceProfile,
          AutoOpenLiveStream: isLiveTV,
       };
 
@@ -776,8 +785,25 @@ var PlayerController = (function () {
             playbackInfo = response;
             
             console.log("[Player] Playback info received successfully");
+            console.log("[Player] Server response analysis:", {
+               mediaSourcesCount: response.MediaSources ? response.MediaSources.length : 0,
+               firstSource: response.MediaSources && response.MediaSources[0] ? {
+                  container: response.MediaSources[0].Container,
+                  supportsDirectPlay: response.MediaSources[0].SupportsDirectPlay,
+                  supportsDirectStream: response.MediaSources[0].SupportsDirectStream,
+                  supportsTranscoding: response.MediaSources[0].SupportsTranscoding,
+                  transcodingUrl: response.MediaSources[0].TranscodingUrl ? 'present' : 'absent',
+                  path: response.MediaSources[0].Path ? 'present' : 'absent',
+                  mediaStreamsCount: response.MediaSources[0].MediaStreams ? response.MediaSources[0].MediaStreams.length : 0,
+                  videoStream: response.MediaSources[0].MediaStreams ? response.MediaSources[0].MediaStreams.find(s => s.Type === 'Video') : null,
+                  audioStreams: response.MediaSources[0].MediaStreams ? response.MediaSources[0].MediaStreams.filter(s => s.Type === 'Audio').map(a => ({codec: a.Codec, channels: a.Channels})) : []
+               } : null,
+               errorCode: response.ErrorCode || 'none'
+            });
+            console.log("[Player] Full first media source:", response.MediaSources && response.MediaSources[0]);
 
             // Detect if this is Dolby Vision content and set flag for adapter selection
+            isDolbyVisionMedia = false;
             if (
                playbackInfo.MediaSources &&
                playbackInfo.MediaSources.length > 0
@@ -896,12 +922,24 @@ var PlayerController = (function () {
     * jellyfin-web integration and custom player scenarios
     */
    function getDeviceProfile() {
+      console.log('[Player] getDeviceProfile called');
+      console.log('[Player] NativeShell available:', typeof NativeShell !== 'undefined');
+      
       if (typeof NativeShell !== 'undefined' && NativeShell.AppHost && NativeShell.AppHost.getDeviceProfile) {
+         console.log('[Player] Calling NativeShell.AppHost.getDeviceProfile()');
          // Call without profileBuilder since this is custom player
-         return NativeShell.AppHost.getDeviceProfile();
+         var profile = NativeShell.AppHost.getDeviceProfile();
+         console.log('[Player] Device profile generated:', {
+            hasProfile: !!profile,
+            directPlayProfiles: profile ? profile.DirectPlayProfiles.length : 0,
+            codecProfiles: profile ? profile.CodecProfiles.length : 0
+         });
+         return profile;
       }
       
       console.error('[Player] NativeShell.AppHost.getDeviceProfile not available!');
+      console.error('[Player] NativeShell:', typeof NativeShell);
+      console.error('[Player] NativeShell.AppHost:', typeof NativeShell !== 'undefined' ? typeof NativeShell.AppHost : 'N/A');
       return null;
    }
 
@@ -2507,6 +2545,17 @@ var PlayerController = (function () {
       hideLoading();
 
       if (!elements.errorDialog) return;
+      
+      // Prevent multiple error dialogs from stacking
+      if (elements.errorDialog.style.display === "flex") {
+         console.log('[Player] Error dialog already visible, ignoring duplicate');
+         return;
+      }
+
+      console.error('[Player] Showing error dialog:', title, message);
+      if (details) {
+         console.error('[Player] Error details:', details);
+      }
 
       elements.errorDialogTitle.textContent = title || "Playback Error";
       elements.errorDialogMessage.textContent =
