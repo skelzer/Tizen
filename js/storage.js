@@ -162,7 +162,7 @@ STORAGE.prototype.exists = function(name) {
 	return false;
 };
 
-// ==================== Per-User Preferences Support (Phase 1) ====================
+// ==================== Per-User Preferences Support ====================
 
 /**
  * Get the current logged-in user's ID
@@ -240,34 +240,6 @@ STORAGE.prototype.setUserPreference = function(baseKey, value, userId) {
 STORAGE.prototype.removeUserPreference = function(baseKey, userId) {
 	var userKey = this.getUserKey(baseKey, userId);
 	this.remove(userKey);
-};
-
-/**
- * Migrate global preference to user-scoped (for all users)
- * This is a helper for migration during Phase 1 rollout
- * @param {string} baseKey - Base key to migrate
- */
-STORAGE.prototype.migrateToUserPreference = function(baseKey) {
-	var globalValue = this.get(baseKey);
-	
-	if (globalValue === undefined || globalValue === null) {
-		return; // Nothing to migrate
-	}
-	
-	var currentUserId = this.getCurrentUserId();
-	if (currentUserId) {
-		// Migrate for current user
-		var userKey = this.getUserKey(baseKey, currentUserId);
-		if (!this.exists(userKey)) {
-			this.set(userKey, globalValue);
-			if (typeof JellyfinAPI !== 'undefined') {
-				JellyfinAPI.Logger.info('[STORAGE] Migrated ' + baseKey + ' to user-scoped for user ' + currentUserId);
-			}
-		}
-	}
-	
-	// Note: We don't remove the global key to maintain backward compatibility
-	// It will serve as fallback for users not yet migrated
 };
 
 /**

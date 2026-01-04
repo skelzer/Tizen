@@ -81,13 +81,6 @@ var BrowseController = (function () {
          return;
       }
 
-      // Migrate global settings to user-scoped (Phase 1)
-      try {
-         storage.migrateToUserPreference("jellyfin_settings");
-      } catch (error) {
-         console.error("[BROWSE] Error migrating settings:", error);
-      }
-
       hasImageHelper = typeof ImageHelper !== "undefined";
 
       console.log("[BROWSE] Waiting for navbar...");

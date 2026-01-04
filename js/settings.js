@@ -122,7 +122,7 @@ var SettingsController = (function () {
 
       cacheElements();
 
-      // Migrate global settings to user-scoped (Phase 1)
+      // Migrate global settings to user-scoped
       storage.migrateToUserPreference("jellyfin_settings");
 
       loadSettings();

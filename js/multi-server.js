@@ -357,7 +357,7 @@ var MultiServerManager = (function() {
                 }
             }
             if (hasNewStructure) {
-                return; // Already migrated to Phase 2
+                return;
             }
         }
         
@@ -734,8 +734,6 @@ var MultiServerManager = (function() {
         getServer: getServer,
         getServerAuth: getServerAuth,
         getAuthForPage: getAuthForPage,
-        
-        // New Phase 2 methods
         getServerUsers: getServerUsers,
         getUniqueServers: getUniqueServers,
         getTotalUserCount: getTotalUserCount,

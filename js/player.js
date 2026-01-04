@@ -42,6 +42,9 @@ var PlayerController = (function () {
    let playbackHealthCheckTimer = null; // Timer for checking playback health
    let forcePlayMode = null; // User override for playback mode ('direct' or 'transcode')
    
+   const USE_PLAYBACK_MANAGER = true;
+   let playbackManagerReady = false;
+   
    // Load persisted play mode on init
    function loadForcePlayMode() {
       if (typeof storage !== "undefined" && itemId) {
@@ -168,8 +171,86 @@ var PlayerController = (function () {
 
       cacheElements();
       setupEventListeners();
+      
+      if (USE_PLAYBACK_MANAGER) {
+         initPlaybackManagerAdapter();
+      }
+      
       // Initialize playback flow (adapter will be created once playback method is known)
       loadItemAndPlay();
+   }
+   
+   function initPlaybackManagerAdapter() {
+      console.log('[Player] Initializing PlaybackManager adapter...');
+      
+      if (typeof PlaybackManagerAdapter === 'undefined') {
+         console.error('[Player] PlaybackManagerAdapter not found! Make sure playback-manager-adapter.js is loaded');
+         return;
+      }
+      
+      // Define UI callbacks for PlaybackManager events
+      var callbacks = {
+         onTimeUpdate: function(currentTicks, durationTicks) {
+            updateTimeDisplay();
+            checkMediaSegments(currentTicks);
+         },
+         
+         onPause: function() {
+            updatePlayPauseButton();
+         },
+         
+         onUnpause: function() {
+            updatePlayPauseButton();
+         },
+         
+         onPlaybackStart: function(state) {
+            console.log('[Player] PlaybackManager playback started', state);
+            showControls();
+            
+            // Update our internal state from PlaybackManager
+            if (state && state.NowPlayingItem) {
+               itemData = state.NowPlayingItem;
+               itemId = itemData.Id;
+            }
+            
+            // PlaybackManager handles server reporting automatically
+            // No need to call reportPlaybackStart()
+            
+            // Load tracks from PlaybackManager
+            loadAudioTracksFromPlaybackManager();
+            loadSubtitleTracksFromPlaybackManager();
+            
+            // Start UI updates
+            if (!progressInterval) {
+               startProgressReporting(); // Keep our interval for UI updates
+            }
+         },
+         
+         onPlaybackStop: function(stopInfo) {
+            console.log('[Player] PlaybackManager playback stopped', stopInfo);
+            cleanup();
+         },
+         
+         onMediaStreamsChange: function() {
+            console.log('[Player] Media streams changed, reloading tracks');
+            loadAudioTracksFromPlaybackManager();
+            loadSubtitleTracksFromPlaybackManager();
+         },
+         
+         onError: function(error) {
+            console.error('[Player] PlaybackManager error:', error);
+            showErrorDialog('Playback Error', error.message || 'An error occurred during playback');
+         }
+      };
+      
+      // Initialize adapter with callbacks
+      playbackManagerReady = PlaybackManagerAdapter.init(callbacks);
+      
+      if (playbackManagerReady) {
+         console.log('[Player] PlaybackManager adapter initialized successfully');
+      } else {
+         console.error('[Player] Failed to initialize PlaybackManager adapter, falling back to legacy mode');
+      }
    }
 
    function getItemIdFromUrl() {
@@ -742,11 +823,152 @@ var PlayerController = (function () {
 
             loadMediaSegments();
             loadAdjacentEpisodes();
-            getPlaybackInfo();
+            
+            if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+               startPlaybackViaPlaybackManager();
+            } else {
+               getPlaybackInfo();
+            }
          }
       );
    }
+   
+   /**
+    * This replaces the manual getPlaybackInfo() → startPlayback() flow
+    */
+   function startPlaybackViaPlaybackManager() {
+      console.log('[Player] Starting playback via PlaybackManager');
+      
+      if (!itemData) {
+         console.error('[Player] No item data available');
+         showErrorDialog('Playback Error', 'Item data not loaded');
+         return;
+      }
+      
+      // Get start position from URL or resume point
+      var startPositionSeconds = getStartPositionFromUrl();
+      var startPositionTicks = 0;
+      
+      if (startPositionSeconds !== null) {
+         startPositionTicks = startPositionSeconds * 10000000; // Convert to ticks
+         console.log('[Player] Starting at position:', startPositionSeconds, 'seconds');
+      } else if (itemData.UserData && itemData.UserData.PlaybackPositionTicks) {
+         startPositionTicks = itemData.UserData.PlaybackPositionTicks;
+         console.log('[Player] Resuming from position:', startPositionTicks / 10000000, 'seconds');
+      }
+      
+      // Build playback options for PlaybackManager
+      var playOptions = {
+         items: [itemData],
+         startPositionTicks: startPositionTicks,
+         fullscreen: true
+      };
+      
+      // Add track preferences if available (from details page or previous selection)
+      var preferredAudioIndex = localStorage.getItem('preferredAudioTrack_' + itemId);
+      var preferredSubtitleIndex = localStorage.getItem('preferredSubtitleTrack_' + itemId);
+      
+      if (preferredAudioIndex !== null) {
+         playOptions.audioStreamIndex = parseInt(preferredAudioIndex, 10);
+         console.log('[Player] Preferred audio track:', preferredAudioIndex);
+      }
+      
+      if (preferredSubtitleIndex !== null) {
+         playOptions.subtitleStreamIndex = parseInt(preferredSubtitleIndex, 10);
+         console.log('[Player] Preferred subtitle track:', preferredSubtitleIndex);
+      }
+      
+      console.log('[Player] PlaybackManager play options:', playOptions);
+      
+      // Start playback via PlaybackManager
+      PlaybackManagerAdapter.play(playOptions)
+         .then(function() {
+            console.log('[Player] PlaybackManager playback started successfully');
+            hideLoading();
+            
+            // Generate session ID for our own tracking (PlaybackManager has its own)
+            playSessionId = generateUUID();
+         })
+         .catch(function(error) {
+            console.error('[Player] PlaybackManager play failed:', error);
+            hideLoading();
+            showErrorDialog(
+               'Playback Failed',
+               error.message || 'Failed to start playback via PlaybackManager',
+               'Check console for details'
+            );
+         });
+   }
 
+   /**
+    * Load audio tracks from PlaybackManager into our UI
+    */
+   function loadAudioTracksFromPlaybackManager() {
+      if (!USE_PLAYBACK_MANAGER || !playbackManagerReady) {
+         return;
+      }
+      
+      try {
+         var tracks = PlaybackManagerAdapter.audioTracks();
+         console.log('[Player] Loaded audio tracks from PlaybackManager:', tracks);
+         
+         // Update UI with tracks (implementation depends on your track selector UI)
+         // For now, just log the available tracks
+         if (tracks && tracks.length > 0) {
+            tracks.forEach(function(track, index) {
+               console.log('[Player] Audio track ' + index + ':', {
+                  index: track.index,
+                  language: track.language,
+                  codec: track.codec,
+                  bitrate: track.bitrate,
+                  channels: track.channels
+               });
+            });
+         }
+      } catch (error) {
+         console.error('[Player] Failed to load audio tracks from PlaybackManager:', error);
+      }
+   }
+
+   /**
+    * Load subtitle tracks from PlaybackManager into our UI
+    */
+   function loadSubtitleTracksFromPlaybackManager() {
+      if (!USE_PLAYBACK_MANAGER || !playbackManagerReady) {
+         return;
+      }
+      
+      try {
+         var tracks = PlaybackManagerAdapter.subtitleTracks();
+         console.log('[Player] Loaded subtitle tracks from PlaybackManager:', tracks);
+         
+         // Update UI with tracks
+         if (tracks && tracks.length > 0) {
+            tracks.forEach(function(track, index) {
+               console.log('[Player] Subtitle track ' + index + ':', {
+                  index: track.index,
+                  language: track.language,
+                  codec: track.codec,
+                  deliveryMethod: track.deliveryMethod
+               });
+            });
+         }
+      } catch (error) {
+         console.error('[Player] Failed to load subtitle tracks from PlaybackManager:', error);
+      }
+   }
+
+   /**
+    * LEGACY: Request playback info from server
+    * NOTE: This function is only used when USE_PLAYBACK_MANAGER = false
+    * When PlaybackManager is enabled, startPlaybackViaPlaybackManager() is used instead
+    * 
+    * This makes a manual PlaybackInfo API request and handles media source selection,
+    * DirectPlay decision-making, and URL building. PlaybackManager handles all of this
+    * automatically with full jellyfin-web parity.
+    * 
+    * @deprecated Use startPlaybackViaPlaybackManager() instead
+    */
    function getPlaybackInfo() {
       var playbackUrl =
          auth.serverAddress + "/Items/" + itemId + "/PlaybackInfo";
@@ -861,9 +1083,22 @@ var PlayerController = (function () {
             ) {
                var mediaSourceToPlay = playbackInfo.MediaSources[0];
                
-               // Check if server approved DirectPlay for MKV with EAC3
-               // This is a problem because Tizen HTML5 video doesn't expose audioTracks for MKV DirectPlay
-               // So we need to force transcoding or find a compatible audio track
+               // ============================================================================
+               // LEGACY WORKAROUND: MKV + EAC3 DirectPlay Issue
+               // NOTE: This workaround is only used when USE_PLAYBACK_MANAGER = false
+               // When PlaybackManager is enabled, this is unnecessary because the runtime
+               // device profile prevents EAC3 in TranscodingProfiles, so the server will
+               // automatically transcode or select a compatible audio track.
+               // 
+               // Problem: Tizen HTML5 video doesn't expose audioTracks for MKV DirectPlay,
+               // so we can't switch from EAC3 to another track at runtime.
+               // 
+               // Solution: Detect MKV + EAC3 and either:
+               // 1. Switch to an alternative compatible audio track, OR
+               // 2. Force transcoding if no alternative exists
+               // 
+               // @deprecated Remove after full migration to PlaybackManager
+               // ============================================================================
                if (mediaSourceToPlay.Container === 'mkv' && mediaSourceToPlay.SupportsDirectPlay) {
                   var defaultAudioIdx = mediaSourceToPlay.DefaultAudioStreamIndex;
                   var audioStreams = mediaSourceToPlay.MediaStreams ? mediaSourceToPlay.MediaStreams.filter(function(s) {
@@ -973,6 +1208,17 @@ var PlayerController = (function () {
       return null;
    }
 
+   /**
+    * LEGACY: Start playback with a media source
+    * NOTE: This function is only used when USE_PLAYBACK_MANAGER = false
+    * When PlaybackManager is enabled, this is bypassed entirely.
+    * 
+    * This function handles DirectPlay, DirectStream, and Transcode logic manually.
+    * PlaybackManager does all of this internally with full jellyfin-web parity.
+    * 
+    * @deprecated Use startPlaybackViaPlaybackManager() instead
+    * @param {Object} mediaSource - Media source from PlaybackInfo response
+    */
    async function startPlayback(mediaSource) {
       playSessionId = generateUUID();
       currentMediaSource = mediaSource;
@@ -1389,6 +1635,11 @@ var PlayerController = (function () {
       
       // Helper to check if playback is paused
       function isPaused() {
+         if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+            return PlaybackManagerAdapter.paused();
+         }
+         
+         // Legacy: Use adapter if available
          if (playerAdapter && typeof playerAdapter.isPaused === 'function') {
             return playerAdapter.isPaused();
          }
@@ -1774,17 +2025,54 @@ var PlayerController = (function () {
    }
 
    /**
+    * Uses PlaybackManager if enabled, otherwise falls back to video element
+    * @returns {number} Current time in seconds
+    */
+   function getCurrentTime() {
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         return PlaybackManagerAdapter.currentTime();
+      }
+      
+      // Legacy: Use video element
+      if (playerAdapter && typeof playerAdapter.getCurrentTime === 'function') {
+         return playerAdapter.getCurrentTime();
+      }
+      return videoPlayer ? videoPlayer.currentTime : 0;
+   }
+
+   /**
+    * Uses PlaybackManager if enabled, otherwise falls back to video element
+    * @returns {number} Duration in seconds
+    */
+   function getDuration() {
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         return PlaybackManagerAdapter.duration();
+      }
+      
+      // Legacy: Use video element
+      if (playerAdapter && typeof playerAdapter.getDuration === 'function') {
+         return playerAdapter.getDuration();
+      }
+      return videoPlayer ? videoPlayer.duration : 0;
+   }
+
+   /**
     * Build playback data object for Jellyfin API
     * @returns {Object} Playback data
     */
    function buildPlaybackData() {
+      var currentTimeTicks = Math.floor(getCurrentTime() * 10000000);
+      var isPausedState = USE_PLAYBACK_MANAGER && playbackManagerReady 
+         ? PlaybackManagerAdapter.paused() 
+         : (videoPlayer ? videoPlayer.paused : true);
+      
       return {
          ItemId: itemId,
          PlaySessionId: playSessionId,
-         PositionTicks: Math.floor(videoPlayer.currentTime * 10000000),
-         IsPaused: videoPlayer.paused,
-         IsMuted: videoPlayer.muted,
-         VolumeLevel: Math.floor(videoPlayer.volume * 100),
+         PositionTicks: currentTimeTicks,
+         IsPaused: isPausedState,
+         IsMuted: videoPlayer ? videoPlayer.muted : false,
+         VolumeLevel: videoPlayer ? Math.floor(videoPlayer.volume * 100) : 100,
       };
    }
 
@@ -1891,7 +2179,12 @@ var PlayerController = (function () {
     * Toggle between play and pause states
     */
    function togglePlayPause() {
-      // Use adapter's isPaused if available, otherwise fallback to video element
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         PlaybackManagerAdapter.playPause();
+         return;
+      }
+      
+      // Legacy: Use adapter's isPaused if available, otherwise fallback to video element
       var isPaused = playerAdapter && typeof playerAdapter.isPaused === 'function' 
          ? playerAdapter.isPaused() 
          : videoPlayer.paused;
@@ -1907,7 +2200,12 @@ var PlayerController = (function () {
     * Play video and update UI
     */
    function play() {
-      // Use adapter if available
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         PlaybackManagerAdapter.unpause();
+         return;
+      }
+      
+      // Legacy: Use adapter if available
       if (playerAdapter && typeof playerAdapter.play === 'function') {
          playerAdapter.play();
       } else {
@@ -1924,7 +2222,12 @@ var PlayerController = (function () {
     * Pause video and update UI
     */
    function pause() {
-      // Use adapter if available
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         PlaybackManagerAdapter.pause();
+         return;
+      }
+      
+      // Legacy: Use adapter if available
       if (playerAdapter && typeof playerAdapter.pause === 'function') {
          playerAdapter.pause();
       } else {
@@ -1966,14 +2269,10 @@ var PlayerController = (function () {
     * Seek forward by interval on seekbar
     */
    function seekForward() {
-      var duration = playerAdapter && typeof playerAdapter.getDuration === 'function'
-         ? playerAdapter.getDuration()
-         : videoPlayer.duration;
+      var duration = getDuration();
       if (duration) {
-         // Use pending seek position if a seek is in progress, otherwise use current video time
-         var currentTime = playerAdapter && typeof playerAdapter.getCurrentTime === 'function'
-            ? playerAdapter.getCurrentTime()
-            : videoPlayer.currentTime;
+         // Use pending seek position if a seek is in progress, otherwise use current time
+         var currentTime = getCurrentTime();
          var currentPosition =
             pendingSeekPosition !== null
                ? pendingSeekPosition
@@ -1986,7 +2285,7 @@ var PlayerController = (function () {
          
          // Update trickplay bubble during keyboard seeking
          if (isSeekbarFocused && duration) {
-            var percent = (seekPosition / videoPlayer.duration) * 100;
+            var percent = (seekPosition / duration) * 100;
             updateTrickplayBubble(seekPosition * TICKS_PER_SECOND, percent);
          }
          
@@ -1998,17 +2297,18 @@ var PlayerController = (function () {
     * Seek backward by interval on seekbar
     */
    function seekBackward() {
-      // Use pending seek position if a seek is in progress, otherwise use current video time
+      var duration = getDuration();
+      // Use pending seek position if a seek is in progress, otherwise use current time
       var currentPosition =
          pendingSeekPosition !== null
             ? pendingSeekPosition
-            : videoPlayer.currentTime;
+            : getCurrentTime();
       seekPosition = Math.max(currentPosition - SKIP_INTERVAL_SECONDS, 0);
       seekTo(seekPosition);
       
       // Update trickplay bubble during keyboard seeking
-      if (isSeekbarFocused && videoPlayer.duration) {
-         var percent = (seekPosition / videoPlayer.duration) * 100;
+      if (isSeekbarFocused && duration) {
+         var percent = (seekPosition / duration) * 100;
          updateTrickplayBubble(seekPosition * TICKS_PER_SECOND, percent);
       }
       
@@ -2020,9 +2320,7 @@ var PlayerController = (function () {
     * @param {number} position - Target position in seconds
     */
    function seekTo(position) {
-      var duration = playerAdapter && typeof playerAdapter.getDuration === 'function'
-         ? playerAdapter.getDuration()
-         : videoPlayer.duration;
+      var duration = getDuration();
       if (!duration || isNaN(position)) return;
 
       position = Math.max(0, Math.min(position, duration));
@@ -2052,12 +2350,20 @@ var PlayerController = (function () {
       showSeekingIndicator();
 
       try {
-         if (playerAdapter && playerAdapter.seek) {
+         if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+            var ticks = Math.floor(position * 10000000);
+            PlaybackManagerAdapter.seek(ticks);
+            console.log('[Player] Seeking via PlaybackManager to', position, 'seconds');
+         } else if (playerAdapter && playerAdapter.seek) {
+            // Legacy: Use adapter's seek method
             playerAdapter.seek(position);
          } else {
+            // Legacy: Direct video element seek
             videoPlayer.currentTime = position;
          }
-      } catch (error) {}
+      } catch (error) {
+         console.error('[Player] Seek error:', error);
+      }
 
       setTimeout(function () {
          isSeeking = false;
@@ -2071,9 +2377,7 @@ var PlayerController = (function () {
     * @param {number} position - Preview position in seconds
     */
    function updateSeekPreview(position) {
-      var duration = playerAdapter && typeof playerAdapter.getDuration === 'function'
-         ? playerAdapter.getDuration()
-         : videoPlayer.duration;
+      var duration = getDuration();
       if (!duration) return;
 
       var progress = (position / duration) * 100;
@@ -2128,7 +2432,7 @@ var PlayerController = (function () {
    function handleProgressBarClick(evt) {
       var rect = elements.progressBar.getBoundingClientRect();
       var pos = (evt.clientX - rect.left) / rect.width;
-      var targetTime = pos * videoPlayer.duration;
+      var targetTime = pos * getDuration();
       seekTo(targetTime);
       showControls();
    }
@@ -2271,10 +2575,13 @@ var PlayerController = (function () {
    }
 
    /**
-    * Handle video buffering event - currently unused but kept for future use
+    * Handle video buffering event
+    * For legacy mode, this could show a buffering indicator if needed.
+    * Currently intentionally kept minimal.
     */
    function onWaiting() {
-      // Intentionally empty - could show buffering indicator in future
+      // Intentionally minimal - PlaybackManager handles buffering automatically
+      // Could be extended to show a buffering spinner if desired
    }
 
    /**
@@ -2361,9 +2668,12 @@ var PlayerController = (function () {
     * Handle video time update event
     */
    function onTimeUpdate() {
-      if (!videoPlayer.duration) return;
+      var duration = getDuration();
+      if (!duration) return;
 
-      var progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+      var currentTime = getCurrentTime();
+      var progress = (currentTime / duration) * 100;
+      
       if (elements.progressFill) {
          elements.progressFill.style.width = progress + "%";
       }
@@ -2376,13 +2686,13 @@ var PlayerController = (function () {
 
       if (elements.timeDisplay) {
          elements.timeDisplay.textContent =
-            formatTime(videoPlayer.currentTime) +
+            formatTime(currentTime) +
             " / " +
-            formatTime(videoPlayer.duration);
+            formatTime(duration);
       }
 
       if (elements.endTime) {
-         var remainingSeconds = videoPlayer.duration - videoPlayer.currentTime;
+         var remainingSeconds = duration - currentTime;
          var endDate = new Date(Date.now() + remainingSeconds * 1000);
          var hours = endDate.getHours();
          var minutes = endDate.getMinutes();
@@ -2395,12 +2705,12 @@ var PlayerController = (function () {
       }
 
       // Check for skip segments
-      checkSkipSegments(videoPlayer.currentTime);
+      checkSkipSegments(currentTime);
 
       // Update skip button countdown if visible
       if (skipOverlayVisible && currentSkipSegment) {
          var timeLeft = Math.ceil(
-            currentSkipSegment.EndTicks / 10000000 - videoPlayer.currentTime
+            currentSkipSegment.EndTicks / 10000000 - currentTime
          );
          updateSkipButtonTime(timeLeft);
       }
@@ -2850,6 +3160,18 @@ var PlayerController = (function () {
       currentAudioIndex = index;
       var stream = audioStreams[index];
       var language = stream.Language || "und";
+      
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         try {
+            PlaybackManagerAdapter.setAudioStreamIndex(stream.Index);
+            console.log('[Player] Audio track switched via PlaybackManager:', stream.Index);
+            closeModal();
+            return;
+         } catch (error) {
+            console.error('[Player] Failed to switch audio via PlaybackManager:', error);
+            // Fall through to legacy methods
+         }
+      }
 
       // Skip Shaka adapter for transcoded streams - they only have one baked-in audio track
       // Must reload video with new AudioStreamIndex parameter
@@ -2914,6 +3236,22 @@ var PlayerController = (function () {
       }
 
       currentSubtitleIndex = index;
+      
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         try {
+            // PlaybackManager uses -1 to disable, or stream Index for subtitle
+            var streamIndex = index >= 0 && index < subtitleStreams.length 
+               ? subtitleStreams[index].Index 
+               : -1;
+            PlaybackManagerAdapter.setSubtitleStreamIndex(streamIndex);
+            console.log('[Player] Subtitle track switched via PlaybackManager:', streamIndex);
+            closeModal();
+            return;
+         } catch (error) {
+            console.error('[Player] Failed to switch subtitle via PlaybackManager:', error);
+            // Fall through to legacy methods
+         }
+      }
 
       // Skip Shaka adapter for transcoded streams - they don't include subtitle tracks
       // Must reload video with new SubtitleStreamIndex parameter
@@ -4244,6 +4582,20 @@ var PlayerController = (function () {
     */
    function playPreviousEpisode() {
       console.log("[playPreviousEpisode] START");
+      
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         console.log('[Player] Playing previous episode via PlaybackManager');
+         try {
+            PlaybackManagerAdapter.previousTrack();
+            console.log('[Player] Successfully triggered previous track');
+            return;
+         } catch (error) {
+            console.error('[Player] Failed to play previous via PlaybackManager:', error);
+            // Fall through to legacy method
+         }
+      }
+      
+      // Legacy method
       if (!previousEpisodeData) {
          console.log("[playPreviousEpisode] No previous episode data available");
          return;
@@ -4287,6 +4639,20 @@ var PlayerController = (function () {
     */
    function playNextEpisode() {
       console.log("[playNextEpisode] START");
+      
+      if (USE_PLAYBACK_MANAGER && playbackManagerReady) {
+         console.log('[Player] Playing next episode via PlaybackManager');
+         try {
+            PlaybackManagerAdapter.nextTrack();
+            console.log('[Player] Successfully triggered next track');
+            return;
+         } catch (error) {
+            console.error('[Player] Failed to play next via PlaybackManager:', error);
+            // Fall through to legacy method
+         }
+      }
+      
+      // Legacy method
       if (!nextEpisodeData) {
          console.log("[playNextEpisode] No next episode data available");
          return;
