@@ -821,10 +821,26 @@ var PlayerController = (function () {
                      container: mediaSource.Container,
                      videoCodec: videoStream ? videoStream.Codec : "none",
                      audioCodec: audioStream ? audioStream.Codec : "none",
+                     audioProfile: audioStream && audioStream.Profile ? audioStream.Profile : "none",
                      supportsDirectPlay: mediaSource.SupportsDirectPlay,
-                     supportsTranscoding: mediaSource.SupportsTranscoding
+                     supportsDirectStream: mediaSource.SupportsDirectStream,
+                     supportsTranscoding: mediaSource.SupportsTranscoding,
+                     transcodingUrl: mediaSource.TranscodingUrl || "none",
+                     directStreamUrl: mediaSource.DirectStreamUrl || "none"
                   });
                }
+               
+               // Additional debug logging for codec troubleshooting
+               console.log("[Player] Server playback decision:", {
+                  container: mediaSource.Container,
+                  videoCodec: videoStream ? videoStream.Codec : "none",
+                  audioCodec: audioStream ? audioStream.Codec : "none",
+                  audioProfile: audioStream && audioStream.Profile ? audioStream.Profile : "none",
+                  audioChannels: audioStream ? audioStream.Channels : "none",
+                  supportsDirectPlay: mediaSource.SupportsDirectPlay,
+                  supportsDirectStream: mediaSource.SupportsDirectStream,
+                  supportsTranscoding: mediaSource.SupportsTranscoding
+               });
 
                isDolbyVisionMedia =
                   videoStream &&

@@ -26,3 +26,4 @@ Debug/
 # Logs
 *.log
 npm-debug.log*
+.buildResult/

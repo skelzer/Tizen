@@ -265,228 +265,8 @@
       'subtitleburnsettings'
    ];
 
-   /**
-    * Generate comprehensive device profile for Tizen TV
-    * This ensures proper DirectPlay and minimal transcoding
-    */
-   function generateDeviceProfile() {
-      var tizenVersion = 6; // Default to Tizen 6 (2020+ TVs)
-      try {
-         var match = navigator.userAgent.match(/Tizen\s+(\d+)\.(\d+)/i);
-         if (match) {
-            tizenVersion = parseInt(match[1], 10) + parseInt(match[2], 10) / 10;
-         }
-      } catch (e) {
-         console.log('[Tizen] Could not detect Tizen version:', e);
-      }
-
-      // Build audio codec list based on Tizen version
-      // DTS is NOT supported on Tizen 4.0+ (Samsung 2018+ TVs)
-      // EAC3 is NOT supported in MKV containers (only in TS/MP4)
-      var videoAudioCodecs = 'aac,mp3,ac3,eac3,opus,vorbis,pcm_s16le,pcm_s24le,aac_latm';
-      var mkvAudioCodecs = 'aac,mp3,ac3,opus,vorbis,pcm_s16le,pcm_s24le,aac_latm';
-      
-      if (tizenVersion < 4) {
-         // Only older Tizen TVs support DTS
-         videoAudioCodecs += ',dca,dts,truehd';
-         mkvAudioCodecs += ',dca,dts,truehd';
-      }
-      // Note: FLAC excluded from video causes sync issues on Tizen
-      
-      // Build video codec list based on Tizen version
-      var mp4VideoCodecs = 'h264,hevc';
-      if (tizenVersion >= 5.5) {
-         // AV1 only supported on Tizen 5.5+ (2020 TVs)
-         mp4VideoCodecs += ',av1';
-      }
-      mp4VideoCodecs += ',vp9';
-      // MKV uses exact same codec support as MP4
-      var mkvVideoCodecs = mp4VideoCodecs;
-
-      return {
-         MaxStreamingBitrate: 120000000,
-         MaxStaticBitrate: 100000000,
-         MusicStreamingTranscodingBitrate: 384000,
-         
-         DirectPlayProfiles: [
-            // Video - MP4/M4V container
-            {
-               Container: 'mp4,m4v',
-               Type: 'Video',
-               VideoCodec: mp4VideoCodecs,
-               AudioCodec: videoAudioCodecs
-            },
-            // Video - MKV container  
-            {
-               Container: 'mkv',
-               Type: 'Video',
-               VideoCodec: mkvVideoCodecs,
-               AudioCodec: mkvAudioCodecs
-            },
-            // Video - WebM container
-            {
-               Container: 'webm',
-               Type: 'Video',
-               VideoCodec: tizenVersion >= 5.5 ? 'vp8,vp9,av1' : 'vp8,vp9',
-               AudioCodec: 'vorbis,opus'
-            },
-            // Video - TS/MPEGTS container (Tizen specific)
-            {
-               Container: 'ts,mpegts',
-               Type: 'Video',
-               VideoCodec: 'h264,hevc,mpeg2video,vc1',
-               AudioCodec: 'aac,mp3,ac3,eac3,opus,pcm_s16le,pcm_s24le,aac_latm'
-            },
-            // Video - M2TS container
-            {
-               Container: 'm2ts',
-               Type: 'Video',
-               VideoCodec: 'h264,hevc,mpeg2video,vc1',
-               AudioCodec: 'aac,mp3,ac3,eac3,pcm_s16le,pcm_s24le'
-            },
-            // Video - Other Tizen-supported containers
-            { Container: 'mov', Type: 'Video', VideoCodec: 'h264', AudioCodec: 'aac,mp3,ac3,eac3' },
-            { Container: 'avi', Type: 'Video', VideoCodec: 'h264,hevc', AudioCodec: 'aac,mp3,ac3,eac3' },
-            { Container: 'wmv', Type: 'Video' },
-            { Container: 'asf', Type: 'Video' },
-            // Video - HLS
-            {
-               Container: 'hls',
-               Type: 'Video',
-               VideoCodec: 'h264,hevc',
-               AudioCodec: 'aac,mp3,ac3,eac3,opus'
-            },
-            // Audio formats
-            { Container: 'mp3', Type: 'Audio' },
-            { Container: 'aac', Type: 'Audio' },
-            { Container: 'flac', Type: 'Audio' },
-            { Container: 'opus', Type: 'Audio' },
-            { Container: 'webm', AudioCodec: 'opus', Type: 'Audio' },
-            { Container: 'wav', Type: 'Audio' },
-            { Container: 'ogg', Type: 'Audio' },
-            { Container: 'oga', Type: 'Audio' },
-            { Container: 'wma', Type: 'Audio' },
-            { Container: 'm4a', AudioCodec: 'aac', Type: 'Audio' },
-            { Container: 'm4b', AudioCodec: 'aac', Type: 'Audio' }
-         ],
-         
-         TranscodingProfiles: [
-            // HLS video transcoding - fMP4 (Tizen 5+)
-            // H.264 first for maximum compatibility
-            // NOTE: EAC3 removed - Tizen cannot play EAC3 in HLS fmp4 via HLS.js
-            {
-               Container: 'mp4',
-               Type: 'Video',
-               AudioCodec: 'aac,mp3,ac3,opus',
-               VideoCodec: 'h264',
-               Context: 'Streaming',
-               Protocol: 'hls',
-               MaxAudioChannels: '6',
-               MinSegments: '1',
-               BreakOnNonKeyFrames: true
-            },
-            // HLS video transcoding - TS
-            // NOTE: EAC3 removed - Tizen cannot play EAC3 in HLS via HLS.js
-            {
-               Container: 'ts',
-               Type: 'Video',
-               AudioCodec: 'aac,mp3,ac3,opus',
-               VideoCodec: 'h264',
-               Context: 'Streaming',
-               Protocol: 'hls',
-               MaxAudioChannels: '6',
-               MinSegments: '1',
-               BreakOnNonKeyFrames: true
-            },
-            // Audio transcoding
-            { Container: 'aac', Type: 'Audio', AudioCodec: 'aac', Context: 'Streaming', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'mp3', Type: 'Audio', AudioCodec: 'mp3', Context: 'Streaming', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'opus', Type: 'Audio', AudioCodec: 'opus', Context: 'Streaming', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'wav', Type: 'Audio', AudioCodec: 'wav', Context: 'Streaming', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'aac', Type: 'Audio', AudioCodec: 'aac', Context: 'Static', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'mp3', Type: 'Audio', AudioCodec: 'mp3', Context: 'Static', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'opus', Type: 'Audio', AudioCodec: 'opus', Context: 'Static', Protocol: 'http', MaxAudioChannels: '6' },
-            { Container: 'wav', Type: 'Audio', AudioCodec: 'wav', Context: 'Static', Protocol: 'http', MaxAudioChannels: '6' }
-         ],
-         
-         ContainerProfiles: [].concat(tizenVersion < 6.5 ? [
-            // Tizen <6.5 doesn't support more than 32 streams in a single file
-            {
-               Type: 'Video',
-               Conditions: [{
-                  Condition: 'LessThanEqual',
-                  Property: 'NumStreams',
-                  Value: '32',
-                  IsRequired: false
-               }]
-            }
-         ] : []),
-         
-         CodecProfiles: [
-            // H264 codec profile
-            {
-               Type: 'Video',
-               Codec: 'h264',
-               Conditions: [
-                  { Condition: 'EqualsAny', Property: 'VideoProfile', Value: 'high|main|baseline|constrained baseline', IsRequired: false },
-                  { Condition: 'EqualsAny', Property: 'VideoRangeType', Value: 'SDR', IsRequired: false },
-                  { Condition: 'LessThanEqual', Property: 'VideoLevel', Value: tizenVersion >= 5 ? '52' : '51', IsRequired: false }
-               ]
-            },
-            // HEVC codec profile
-            {
-               Type: 'Video',
-               Codec: 'hevc',
-               Conditions: [
-                  { Condition: 'EqualsAny', Property: 'VideoProfile', Value: 'main|main 10', IsRequired: false },
-                  // Tizen 3+ supports HDR10, HLG, and can play DV fallback
-                  { Condition: 'EqualsAny', Property: 'VideoRangeType', Value: tizenVersion >= 3 ? 'SDR|HDR10|HDR10Plus|HLG|DOVIWithSDR|DOVIWithHDR10' : 'SDR', IsRequired: false },
-                  { Condition: 'LessThanEqual', Property: 'VideoLevel', Value: '183', IsRequired: false }
-               ]
-            },
-            // AV1 codec profile (Tizen 5.5+ / 2021 TVs)
-            {
-               Type: 'Video',
-               Codec: 'av1',
-               Conditions: [
-                  { Condition: 'EqualsAny', Property: 'VideoProfile', Value: 'main', IsRequired: false },
-                  { Condition: 'EqualsAny', Property: 'VideoRangeType', Value: 'SDR|HDR10|HDR10Plus|HLG', IsRequired: false },
-                  { Condition: 'LessThanEqual', Property: 'VideoLevel', Value: '15', IsRequired: false }
-               ]
-            },
-            // VP9 codec profile
-            {
-               Type: 'Video',
-               Codec: 'vp9',
-               Conditions: [
-                  { Condition: 'EqualsAny', Property: 'VideoRangeType', Value: 'SDR|HDR10|HDR10Plus|HLG', IsRequired: false }
-               ]
-            },
-            // Audio channels limit
-            {
-               Type: 'VideoAudio',
-               Conditions: [
-                  { Condition: 'LessThanEqual', Property: 'AudioChannels', Value: '6', IsRequired: false }
-               ]
-            }
-         ],
-         
-         SubtitleProfiles: [
-            { Format: 'vtt', Method: 'External' },
-            { Format: 'srt', Method: 'External' },
-            { Format: 'ass', Method: 'External' },
-            { Format: 'ssa', Method: 'External' },
-            { Format: 'pgssub', Method: 'Encode' },
-            { Format: 'dvdsub', Method: 'Encode' },
-            { Format: 'dvbsub', Method: 'Encode' },
-            { Format: 'sub', Method: 'Encode' }
-         ],
-         
-         ResponseProfiles: [
-            { Type: 'Video', Container: 'm4v', MimeType: 'video/mp4' }
-         ]
-      };
-   }
+   // Device profile generation is now delegated to jellyfin-web's runtime profileBuilder
+   // This ensures full parity with the official client's codec/container detection
 
    // Create NativeShell interface for jellyfin-web integration
    window.NativeShell = {
@@ -531,23 +311,25 @@
           */
          getDeviceProfile: function (profileBuilder) {
             console.log('[Tizen] NativeShell.AppHost.getDeviceProfile called');
-            
-            // If jellyfin-web's profileBuilder is provided, use it
+            // For full parity: always delegate to jellyfin-web's runtime profile builder
             if (typeof profileBuilder === 'function') {
-               console.log('[Tizen] Using jellyfin-web profileBuilder');
                return profileBuilder({
                   enableMkvProgressive: false,
                   enableSsaRender: true
                });
             }
-            
-            // Otherwise generate device profile directly
-            return generateDeviceProfile();
+
+            console.warn('[Tizen] profileBuilder not provided; returning empty profile');
+            return {};
          },
 
          getSyncProfile: function (profileBuilder) {
             console.log('[Tizen] NativeShell.AppHost.getSyncProfile');
-            return profileBuilder({ enableMkvProgressive: false });
+            if (typeof profileBuilder === 'function') {
+               return profileBuilder({ enableMkvProgressive: false });
+            }
+            console.warn('[Tizen] profileBuilder not provided; returning empty sync profile');
+            return {};
          },
 
          screen: function () {
