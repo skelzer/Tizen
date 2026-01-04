@@ -22,12 +22,12 @@ var SettingsController = (function () {
    var elements = {};
 
    // Timing Constants
-   const FOCUS_DELAY_MS = 100;
+   var FOCUS_DELAY_MS = 100;
 
    // Carousel Speed Options (in milliseconds)
-   const CAROUSEL_SPEEDS = [5000, 8000, 10000, 15000, 20000];
-   const DEFAULT_CAROUSEL_SPEED_MS = 8000;
-   const CAROUSEL_SPEED_TO_SECONDS = 1000;
+   var CAROUSEL_SPEEDS = [5000, 8000, 10000, 15000, 20000];
+   var DEFAULT_CAROUSEL_SPEED_MS = 8000;
+   var CAROUSEL_SPEED_TO_SECONDS = 1000;
 
    var settings = {
       /**
@@ -121,9 +121,6 @@ var SettingsController = (function () {
       }
 
       cacheElements();
-
-      // Migrate global settings to user-scoped
-      storage.migrateToUserPreference("jellyfin_settings");
 
       loadSettings();
       displayUserInfo();
