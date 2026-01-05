@@ -553,25 +553,22 @@
          },
 
          getDeviceProfile: function (profileBuilder) {
-            console.log('[Tizen] NativeShell.AppHost.getDeviceProfile called');
+                        console.log('[Tizen] NativeShell.AppHost.getDeviceProfile called');
             if (typeof profileBuilder === 'function') {
                return profileBuilder({
                   enableMkvProgressive: false,
                   enableSsaRender: true
                });
-            }
-
-            if (typeof window.JellyfinProfileBuilder === 'function') {
+            } else if (typeof window.JellyfinProfileBuilder === 'function') {
                console.log('[Tizen] Using JellyfinProfileBuilder (extracted from jellyfin-web)');
                return window.JellyfinProfileBuilder();
+            } else {
+               return getTizenDeviceProfile();
             }
-
             console.log('[Tizen] Using static Tizen device profile fallback');
-            return getTizenDeviceProfile();
          },
 
          getSyncProfile: function (profileBuilder) {
-            console.log('[Tizen] NativeShell.AppHost.getSyncProfile');
             if (typeof profileBuilder === 'function') {
                return profileBuilder({ enableMkvProgressive: false });
             }

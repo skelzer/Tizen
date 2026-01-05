@@ -879,7 +879,10 @@ var PlayerController = (function () {
          console.log('[Player] Preferred subtitle track:', preferredSubtitleIndex);
       }
       
-      console.log('[Player] PlaybackManager play options:', playOptions);
+      // Get max bitrate setting (in bps)
+      var currentMaxBitrate = storage.get("maxBitrate", false) || "120000000";
+      playOptions.maxBitrate = parseInt(currentMaxBitrate, 10);
+            console.log('[Player] PlaybackManager play options:', playOptions);
       
       // Start playback via PlaybackManager
       PlaybackManagerAdapter.play(playOptions)
