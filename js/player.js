@@ -1524,6 +1524,17 @@ var PlayerController = (function () {
          .load(videoUrl, {
             mimeType: mimeType,
             startPosition: startPosition,
+            container: mediaSource.Container,
+            videoCodec: videoStream ? videoStream.Codec : null,
+            audioCodec: audioStream ? audioStream.Codec : null,
+            width: videoStream ? videoStream.Width : null,
+            height: videoStream ? videoStream.Height : null,
+            bitrate: mediaSource.Bitrate || null,
+            isDirectPlay: useDirectPlay,
+            isHEVC: isHEVC,
+            isHEVC10bit: isHEVC10bit,
+            isDolbyVision: isDolbyVision,
+            mediaSource: mediaSource
          })
          .then(function () {
             clearLoadingTimeout();

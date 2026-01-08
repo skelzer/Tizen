@@ -694,6 +694,107 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
         }
     }
 
+    /**
+     * Configure streaming properties for HEVC/4K content
+     * Samsung Tizen TVs require explicit configuration for Direct Play of HEVC
+     * @param {string} url - Media URL
+     * @param {Object} options - Playback options (may contain mediaSource info)
+     */
+    configureStreamingProperties(url, options) {
+        try {
+            // Detect video codec from URL or options
+            const urlLower = url.toLowerCase();
+            const videoCodec = (options.videoCodec || '').toLowerCase();
+            const container = (options.container || '').toLowerCase();
+            
+            // Check for HEVC content from options (most reliable) or URL
+            const isHEVC = options.isHEVC === true ||
+                           videoCodec === 'hevc' ||
+                           videoCodec.startsWith('hev1') ||
+                           videoCodec.startsWith('hvc1') ||
+                           videoCodec.startsWith('h265') ||
+                           urlLower.includes('hevc') || 
+                           urlLower.includes('h265') ||
+                           urlLower.includes('videocodec=hevc');
+            
+            // Check for 10-bit HEVC (Main 10 profile)
+            const is10bit = options.isHEVC10bit === true ||
+                            urlLower.includes('10bit') ||
+                            urlLower.includes('main10');
+            
+            // Check for 4K content
+            const is4K = (options.width && options.width >= 3840) ||
+                         (options.height && options.height >= 2160) ||
+                         urlLower.includes('2160') ||
+                         urlLower.includes('4k');
+            
+            // Check for Direct Play mode
+            const isDirectPlay = options.isDirectPlay === true ||
+                                 urlLower.includes('static=true');
+            
+            console.log('[TizenAdapter] Stream detection:', {
+                isHEVC: isHEVC,
+                is10bit: is10bit,
+                is4K: is4K,
+                isDirectPlay: isDirectPlay,
+                container: container,
+                videoCodec: videoCodec,
+                width: options.width,
+                height: options.height
+            });
+            
+            // For HEVC Direct Play, we need to set streaming property
+            if (isHEVC && isDirectPlay) {
+                // Build bitrate info
+                var bitrate = options.bitrate || 40000000; // Default 40 Mbps for 4K HEVC
+                if (is4K) {
+                    bitrate = Math.max(bitrate, 80000000); // At least 80 Mbps for 4K HEVC
+                }
+                
+                // Set ADAPTIVE_INFO to help AVPlay with buffer allocation
+                try {
+                    var adaptiveInfo = 'BITRATES=' + bitrate + '|STARTBITRATE=' + bitrate + '|SKIPBITRATE=LOWEST';
+                    webapis.avplay.setStreamingProperty('ADAPTIVE_INFO', adaptiveInfo);
+                    console.log('[TizenAdapter] Set ADAPTIVE_INFO:', adaptiveInfo);
+                } catch (e) {
+                    console.warn('[TizenAdapter] Could not set ADAPTIVE_INFO:', e);
+                }
+                
+                // Enable 4K mode for 4K content
+                if (is4K) {
+                    try {
+                        webapis.avplay.setStreamingProperty('SET_MODE_4K', 'TRUE');
+                        console.log('[TizenAdapter] Enabled 4K mode');
+                    } catch (e) {
+                        console.warn('[TizenAdapter] Could not set 4K mode:', e);
+                    }
+                }
+                
+                // For HEVC 10-bit, some Tizen versions need additional configuration
+                // Try to set codec info explicitly
+                if (is10bit) {
+                    console.log('[TizenAdapter] HEVC 10-bit (Main 10) content detected');
+                    try {
+                        // Some Tizen versions support explicit codec configuration
+                        // This helps older TVs (Tizen 4.0) handle HEVC 10-bit properly
+                        webapis.avplay.setStreamingProperty('PREBUFFER_MODE', '4000'); // 4 second buffer
+                        console.log('[TizenAdapter] Set prebuffer for 10-bit content');
+                    } catch (e) {
+                        console.warn('[TizenAdapter] Could not set prebuffer:', e);
+                    }
+                }
+            }
+            
+            // Log container info
+            if (container === 'mkv') {
+                console.log('[TizenAdapter] MKV container - Tizen AVPlay supports MKV natively');
+            }
+            
+        } catch (error) {
+            console.warn('[TizenAdapter] Error configuring streaming properties:', error);
+        }
+    }
+
     async load(url, options = {}) {
         if (!this.initialized) {
             throw new Error('Tizen AVPlay API not initialized');
@@ -702,11 +803,22 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
         try {
             this.currentUrl = url;
 
-            // Hide HTML video element since AVPlay renders on separate layer behind it
+            // AVPlay renders video on a separate layer BEHIND the HTML layer
+            // We need to make the app layer transparent to see the video
+            // Hide HTML video element and make backgrounds transparent
             if (this.videoElement) {
                 this.videoElement.style.display = 'none';
+                // Also save and clear video element's background
+                this.originalVideoBackground = this.videoElement.style.background;
+                this.videoElement.style.background = 'transparent';
                 console.log('[TizenAdapter] Hidden HTML video element for AVPlay rendering');
             }
+            
+            // Make body transparent so AVPlay video layer shows through
+            // Save original background to restore on destroy
+            this.originalBodyBackground = document.body.style.background;
+            document.body.style.background = 'transparent';
+            console.log('[TizenAdapter] Set body to transparent for AVPlay video layer');
 
             // Close previous session if any
             try {
@@ -715,6 +827,10 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
 
             // Open new media
             webapis.avplay.open(url);
+            
+            // Configure streaming properties for HEVC/4K content
+            // This is CRITICAL for Direct Play of HEVC on Samsung TVs
+            this.configureStreamingProperties(url, options);
             
             // Get actual screen resolution from Tizen TV API
             var screenWidth = window.innerWidth;
@@ -734,14 +850,25 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
             }
             
             // Set display area to full screen
+            console.log('[TizenAdapter] Setting display rect: 0, 0,', screenWidth, 'x', screenHeight);
             webapis.avplay.setDisplayRect(0, 0, screenWidth, screenHeight);
             
-            // Set display mode to stretch/fill
-            try {
-                webapis.avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_FULL_SCREEN');
-                console.log('[TizenAdapter] Set display mode to full screen');
-            } catch (e) {
-                console.warn('[TizenAdapter] Could not set display method:', e);
+            // Set display mode - try multiple modes for compatibility with older Tizen versions
+            var displayModeSet = false;
+            var displayModes = [
+                'PLAYER_DISPLAY_MODE_FULL_SCREEN',
+                'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO',
+                'PLAYER_DISPLAY_MODE_LETTER_BOX'
+            ];
+            
+            for (var i = 0; i < displayModes.length && !displayModeSet; i++) {
+                try {
+                    webapis.avplay.setDisplayMethod(displayModes[i]);
+                    console.log('[TizenAdapter] Set display mode to:', displayModes[i]);
+                    displayModeSet = true;
+                } catch (e) {
+                    console.warn('[TizenAdapter] Display mode', displayModes[i], 'not supported:', e.message);
+                }
             }
 
             // Configure listener
@@ -845,6 +972,20 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
                         console.log('[TizenAdapter] Prepared successfully');
                         console.log('[TizenAdapter] Duration:', this.duration, 'seconds');
                         console.log('[TizenAdapter] State:', state);
+                        
+                        // Log stream info to debug codec detection
+                        try {
+                            var streamInfo = webapis.avplay.getCurrentStreamInfo();
+                            console.log('[TizenAdapter] Stream info:', JSON.stringify(streamInfo, null, 2));
+                            
+                            var trackInfo = webapis.avplay.getTotalTrackInfo();
+                            console.log('[TizenAdapter] Track count:', trackInfo.length);
+                            for (var t = 0; t < trackInfo.length; t++) {
+                                console.log('[TizenAdapter] Track', t, ':', trackInfo[t].type, '-', JSON.stringify(trackInfo[t].extra_info));
+                            }
+                        } catch (infoErr) {
+                            console.warn('[TizenAdapter] Could not get stream info:', infoErr);
+                        }
                         
                         // Update video element duration for UI compatibility
                         if (this.videoElement) {
@@ -1069,9 +1210,16 @@ class TizenVideoAdapter extends VideoPlayerAdapter {
         try {
             webapis.avplay.stop();
             webapis.avplay.close();
-            // Restore video element visibility
+            // Restore video element visibility and background
             if (this.videoElement) {
                 this.videoElement.style.display = '';
+                if (this.originalVideoBackground !== undefined) {
+                    this.videoElement.style.background = this.originalVideoBackground;
+                }
+            }
+            // Restore body background
+            if (this.originalBodyBackground !== undefined) {
+                document.body.style.background = this.originalBodyBackground;
             }
         } catch (error) {}
         this.currentUrl = null;
