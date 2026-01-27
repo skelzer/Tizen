@@ -442,11 +442,11 @@ export const getImageUrl = (path, size = 'w500') => {
  */
 export const proxyImage = async (imageUrl) => {
 	if (!imageUrl) return null;
-	
+
 	try {
 		const response = await fetch(imageUrl);
 		if (!response.ok) return null;
-		
+
 		const blob = await response.blob();
 		return URL.createObjectURL(blob);
 	} catch (error) {

@@ -1,6 +1,6 @@
 /**
  * useProxiedImage hook for Tizen
- * 
+ *
  * On Tizen, packaged apps bypass CORS so we can fetch images directly.
  * This hook fetches images and returns blob URLs for display.
  */
@@ -60,10 +60,10 @@ export const useProxiedImage = (originalUrl) => {
 		// Fetch and create blob URL
 		const fetchImage = async () => {
 			try {
-				const fetchOptions = hasAbortController 
+				const fetchOptions = hasAbortController
 					? { signal: abortControllerRef.current.signal }
 					: {};
-				
+
 				const response = await fetch(originalUrl, fetchOptions);
 
 				if (!response.ok) {

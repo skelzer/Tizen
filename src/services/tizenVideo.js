@@ -1,7 +1,7 @@
 /**
  * Tizen Video Service - Hardware-accelerated video playback using AVPlay APIs
  */
-/* global webapis, tizen, navigator */
+/* global webapis, navigator */
 
 let isAVPlayAvailable = false;
 
@@ -93,7 +93,7 @@ export const getMediaCapabilities = async () => {
 			if (typeof webapis.productinfo.getModel === 'function') {
 				capabilities.modelName = webapis.productinfo.getModel();
 			}
-			
+
 			// Check resolution support
 			if (typeof webapis.productinfo.is8KPanelSupported === 'function' &&
 				webapis.productinfo.is8KPanelSupported()) {
@@ -238,7 +238,7 @@ export const registerAppStateObserver = (onForeground, onBackground) => {
 	};
 };
 
-export const keepScreenOn = async (enable) => {
+export const keepScreenOn = async () => {
 	// Tizen handles screen keeping via app lifecycle
 	// No explicit API needed - video playback keeps screen on automatically
 	return true;

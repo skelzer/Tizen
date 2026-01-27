@@ -7,14 +7,38 @@
  */
 
 const STORAGE_PREFIX = 'moonfin_';
-let storageInitialized = false;
+
+/**
+ * Clear old/temporary data to free up space
+ * @returns {Promise<void>}
+ */
+const clearOldData = async () => {
+	// Clear any cached/temporary data patterns
+	const temporaryPatterns = ['_cache', '_temp', '_preview'];
+
+	try {
+		const keysToRemove = [];
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i);
+			if (key && key.startsWith(STORAGE_PREFIX)) {
+				const shortKey = key.substring(STORAGE_PREFIX.length);
+				if (temporaryPatterns.some(pattern => shortKey.includes(pattern))) {
+					keysToRemove.push(key);
+				}
+			}
+		}
+		keysToRemove.forEach(key => localStorage.removeItem(key));
+		console.log(`[storage] Cleared ${keysToRemove.length} temporary items`);
+	} catch (error) {
+		console.warn('[storage] Error during cleanup:', error);
+	}
+};
 
 /**
  * Initialize storage (no-op for Tizen, kept for API compatibility)
  * @returns {Promise<boolean>} Always resolves to true
  */
 export const initStorage = async () => {
-	storageInitialized = true;
 	return true;
 };
 
@@ -27,7 +51,7 @@ export const getFromStorage = async (key) => {
 	try {
 		const item = localStorage.getItem(`${STORAGE_PREFIX}${key}`);
 		if (item === null) return null;
-		
+
 		try {
 			return JSON.parse(item);
 		} catch (parseError) {
@@ -53,12 +77,12 @@ export const saveToStorage = async (key, value) => {
 		return true;
 	} catch (error) {
 		console.error(`[storage] Error saving key "${key}":`, error);
-		
+
 		// If we hit quota, try to clear old data
 		if (error.name === 'QuotaExceededError') {
 			console.warn('[storage] Storage quota exceeded, attempting cleanup');
 			await clearOldData();
-			
+
 			// Try again after cleanup
 			try {
 				localStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify(value));
@@ -127,39 +151,13 @@ export const getAllKeys = async () => {
 };
 
 /**
- * Clear old/temporary data to free up space
- * @returns {Promise<void>}
- */
-const clearOldData = async () => {
-	// Clear any cached/temporary data patterns
-	const temporaryPatterns = ['_cache', '_temp', '_preview'];
-	
-	try {
-		const keysToRemove = [];
-		for (let i = 0; i < localStorage.length; i++) {
-			const key = localStorage.key(i);
-			if (key && key.startsWith(STORAGE_PREFIX)) {
-				const shortKey = key.substring(STORAGE_PREFIX.length);
-				if (temporaryPatterns.some(pattern => shortKey.includes(pattern))) {
-					keysToRemove.push(key);
-				}
-			}
-		}
-		keysToRemove.forEach(key => localStorage.removeItem(key));
-		console.log(`[storage] Cleared ${keysToRemove.length} temporary items`);
-	} catch (error) {
-		console.warn('[storage] Error during cleanup:', error);
-	}
-};
-
-/**
  * Get storage usage information
  * @returns {Promise<{used: number, keys: number}>}
  */
 export const getStorageInfo = async () => {
 	let totalSize = 0;
 	let keyCount = 0;
-	
+
 	try {
 		for (let i = 0; i < localStorage.length; i++) {
 			const key = localStorage.key(i);
@@ -172,7 +170,7 @@ export const getStorageInfo = async () => {
 	} catch (error) {
 		console.warn('[storage] Error calculating storage info:', error);
 	}
-	
+
 	return {
 		used: totalSize,
 		keys: keyCount

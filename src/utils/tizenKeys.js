@@ -236,7 +236,7 @@ export const isKey = (event, tizenKeyCode) => {
  * @returns {boolean} True if it's a back button press
  */
 export const isBackKey = (event) => {
-	return event.keyCode === TIZEN_KEYS.BACK || 
+	return event.keyCode === TIZEN_KEYS.BACK ||
 		event.keyCode === 461 || // webOS back (for compatibility)
 		event.keyCode === 27 ||  // Escape (for browser testing)
 		event.keyCode === 8;     // Backspace
@@ -257,7 +257,7 @@ export const isExitKey = (event) => {
  * @returns {boolean} True if it's a play or pause key
  */
 export const isPlayPauseKey = (event) => {
-	return event.keyCode === TIZEN_KEYS.PLAY || 
+	return event.keyCode === TIZEN_KEYS.PLAY ||
 		event.keyCode === TIZEN_KEYS.PAUSE ||
 		event.keyCode === TIZEN_KEYS.PLAY_PAUSE;
 };

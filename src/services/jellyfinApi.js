@@ -1,4 +1,3 @@
-/* global navigator */
 const APP_NAME = 'Moonfin for Tizen';
 const APP_VERSION = '2.0.0';
 

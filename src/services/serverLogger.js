@@ -157,7 +157,7 @@ const log = async (level, category, message, context = {}) => {
 	};
 
 	// Always log to console
-	const consoleMethod = level === LOG_LEVELS.ERROR || level === LOG_LEVELS.FATAL ? 'error' : 
+	const consoleMethod = level === LOG_LEVELS.ERROR || level === LOG_LEVELS.FATAL ? 'error' :
 		level === LOG_LEVELS.WARNING ? 'warn' : 'log';
 	console[consoleMethod](`[${category}] ${message}`, context);
 
