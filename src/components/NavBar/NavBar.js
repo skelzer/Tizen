@@ -9,7 +9,11 @@ import JellyseerrIcon from '../icons/JellyseerrIcon';
 
 import css from './NavBar.module.less';
 
-const NavContainer = SpotlightContainerDecorator({enterTo: 'last-focused'}, 'nav');
+const NavContainer = SpotlightContainerDecorator({
+	enterTo: 'last-focused',
+	defaultElement: '.spottable-default',
+	preserveId: true
+}, 'nav');
 
 const SpottableButton = Spottable('button');
 
@@ -80,7 +84,8 @@ const NavBar = ({
 				'library-toolbar',
 				'jellyseerr-browse-grid',
 				'jellyseerr-discover-featured',
-				'search-input'
+				'search-input',
+				'livetv-guide'
 			];
 			for (const target of focusTargets) {
 				if (Spotlight.focus(target)) {

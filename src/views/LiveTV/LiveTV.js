@@ -1,5 +1,6 @@
 import {useState, useEffect, useCallback, useRef, useMemo} from 'react';
 import Spottable from '@enact/spotlight/Spottable';
+import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import Spotlight from '@enact/spotlight';
 import {useAuth} from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -9,6 +10,11 @@ import css from './LiveTV.module.less';
 
 const SpottableDiv = Spottable('div');
 const SpottableButton = Spottable('button');
+const GuideControls = SpotlightContainerDecorator({enterTo: 'last-focused'}, 'div');
+const PopupContainer = SpotlightContainerDecorator({
+	enterTo: 'default-element',
+	preserveId: true
+}, 'div');
 
 const HOURS_TO_DISPLAY = 6;
 const PIXELS_PER_HOUR = 600;
@@ -181,6 +187,25 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 				return;
 			}
 
+			if (keyCode === 38) {
+				const focused = Spotlight.getCurrent();
+				if (focused && (focused.id === 'prev-day' || focused.id === 'next-day' || focused.id === 'today' || focused.id === 'filter' || focused.id === 'recordings')) {
+					e.preventDefault();
+					Spotlight.focus('navbar');
+					return;
+				}
+				
+				const guideContent = guideContentRef.current;
+				if (guideContent && guideContent.scrollTop < 50) {
+					const programCell = focused?.closest('[data-program-id]');
+					if (programCell) {
+						e.preventDefault();
+						Spotlight.focus('livetv-guide');
+						return;
+					}
+				}
+			}
+
 			if (focusMode === 'controls') {
 				if (keyCode === 40) {
 					e.preventDefault();
@@ -228,6 +253,9 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 
 	const handleProgramClick = useCallback((program, channel) => {
 		setSelectedProgram({program, channel});
+		setTimeout(() => {
+			Spotlight.focus('livetv-popup');
+		}, 100);
 	}, []);
 
 	const handleWatchChannel = useCallback(() => {
@@ -333,7 +361,7 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 			<div className={css.guideContainer}>
 				<div className={css.guideHeader}>
 					<div className={css.guideTitle}>Live TV Guide</div>
-					<div className={css.guideControls} data-spotlight-container="">
+					<GuideControls className={css.guideControls} spotlightId="livetv-guide">
 						<SpottableButton
 							className={css.guideBtn}
 							onClick={handlePrevDay}
@@ -370,7 +398,7 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 						>
 							Recordings
 						</SpottableButton>
-					</div>
+					</GuideControls>
 				</div>
 
 				<div className={css.guideGridContainer}>
@@ -461,7 +489,7 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 
 			{selectedProgram && (
 				<div className={css.programPopup}>
-					<div className={css.popupContent}>
+				<PopupContainer className={css.popupContent} spotlightId="livetv-popup">
 						<div className={css.popupHeader}>
 							<div className={css.popupTitle}>
 								{selectedProgram.program.Name}
@@ -530,7 +558,7 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 						<div className={css.popupActions}>
 							{isCurrentProgram(selectedProgram.program) && (
 								<SpottableButton
-									className={css.popupBtn}
+									className={`${css.popupBtn} spottable-default`}
 									onClick={handleWatchChannel}
 									spotlightId="popup-watch"
 								>
@@ -538,14 +566,14 @@ const LiveTV = ({onPlayChannel, onBack, onRecordings}) => {
 								</SpottableButton>
 							)}
 							<SpottableButton
-								className={css.popupBtn}
+								className={`${css.popupBtn} ${!isCurrentProgram(selectedProgram.program) ? 'spottable-default' : ''}`}
 								onClick={handleClosePopup}
 								spotlightId="popup-close"
 							>
 								Close
 							</SpottableButton>
 						</div>
-					</div>
+					</PopupContainer>
 				</div>
 			)}
 		</div>
