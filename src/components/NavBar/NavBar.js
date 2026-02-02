@@ -75,22 +75,26 @@ const NavBar = ({
 			e.preventDefault();
 			e.stopPropagation();
 			const focusTargets = [
-				'featured-banner',			'row-0',				'settings-sidebar',
+				'featured-banner',
+				'row-0',
+				'settings-sidebar',
 				'favorites-row-0',
-				'details-primary-btn',
-				'genre-browse-grid',
 				'genres-grid',
-				'library-toolbar',
+				'genre-browse-grid',
+				'library-letter-hash',
+				'library-grid',
+				'discover-row-0',
 				'jellyseerr-browse-grid',
-				'jellyseerr-discover-featured',
+				'action-buttons',
+				'details-primary-btn',
 				'search-input',
 				'livetv-guide'
 			];
 			for (const target of focusTargets) {
-				if (Spotlight.focus(target)) {
-					break;
-				}
+				if (Spotlight.focus(target)) return;
 			}
+			Spotlight.setPointerMode(false);
+			Spotlight.move('down');
 		}
 	}, []);
 

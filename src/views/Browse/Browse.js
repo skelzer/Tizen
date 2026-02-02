@@ -27,13 +27,7 @@ const SpottableButton = Spottable('button');
 
 const Browse = ({
 	onSelectItem,
-	onSelectLibrary,
-	onOpenSearch,
-	onOpenSettings,
-	onOpenFavorites,
-	onOpenJellyseerr,
-	onOpenGenres,
-	onSwitchUser
+	onSelectLibrary
 }) => {
 	const {api, serverUrl, isAuthenticated, accessToken} = useAuth();
 	const {settings} = useSettings();
@@ -101,18 +95,6 @@ const Browse = ({
 		});
 	}, [allRowData, homeRowsConfig, settings.mergeContinueWatchingNextUp]);
 
-	useEffect(() => {
-		if (!isAuthenticated) {
-			onSwitchUser?.();
-		}
-	}, [isAuthenticated, onSwitchUser]);
-
-	useEffect(() => {
-		cachedRowData = null;
-		cachedLibraries = null;
-		cachedFeaturedItems = null;
-	}, [accessToken]);
-
 	const handleNavigateUp = useCallback((fromRowIndex) => {
 		if (fromRowIndex === 0) {
 			if (settings.showFeaturedBar !== false) {
@@ -128,7 +110,7 @@ const Browse = ({
 		if (targetRow) {
 			targetRow.scrollIntoView({behavior: 'smooth', block: 'start'});
 		}
-	}, []);
+	}, [settings.showFeaturedBar]);
 
 	const handleNavigateDown = useCallback((fromRowIndex) => {
 		const targetIndex = fromRowIndex + 1;
@@ -139,6 +121,30 @@ const Browse = ({
 			targetRow.scrollIntoView({behavior: 'smooth', block: 'center'});
 		}
 	}, [filteredRows.length]);
+
+	useEffect(() => {
+		if (settings.showFeaturedBar === false) {
+			setBrowseMode('rows');
+		}
+	}, [settings.showFeaturedBar]);
+
+	useEffect(() => {
+		if (!isLoading) {
+			setTimeout(() => {
+				if (settings.showFeaturedBar !== false && featuredItems.length > 0) {
+					Spotlight.focus('featured-banner');
+				} else if (filteredRows.length > 0) {
+					Spotlight.focus('row-0');
+				}
+			}, FOCUS_DELAY_MS);
+		}
+	}, [isLoading, featuredItems.length, filteredRows.length, settings.showFeaturedBar]);
+
+	useEffect(() => {
+		cachedRowData = null;
+		cachedLibraries = null;
+		cachedFeaturedItems = null;
+	}, [accessToken]);
 
 	useEffect(() => {
 		const loadData = async () => {
@@ -346,33 +352,24 @@ const Browse = ({
 		onSelectLibrary?.(library);
 	}, [onSelectLibrary]);
 
-	const handleShuffle = useCallback(async () => {
-		try {
-			const items = await api.getRandomItem('Movie,Series');
-			if (items.Items?.length > 0) {
-				const item = items.Items[0];
-				console.log('[Shuffle] Got random item:', item.Type, item.Name, item.Id);
-				onSelectItem?.(item);
-			} else {
-				console.warn('[Shuffle] No items returned');
-			}
-		} catch (err) {
-			console.error('Shuffle failed:', err);
-		}
-	}, [api, onSelectItem]);
-
 	const handleHome = useCallback(() => {
-		setBrowseMode('featured');
-		if (mainContentRef.current) {
-			mainContentRef.current.scrollTo({top: 0, behavior: 'smooth'});
-		}
-		setTimeout(() => {
-			if (settings.showFeaturedBar !== false) {
-				Spotlight.focus('featured-banner');
-			} else {
-				Spotlight.focus('row-0');
+		if (settings.showFeaturedBar !== false) {
+			setBrowseMode('featured');
+			if (mainContentRef.current) {
+				mainContentRef.current.scrollTo({top: 0, behavior: 'smooth'});
 			}
-		}, FOCUS_DELAY_MS);
+			setTimeout(() => {
+				Spotlight.focus('featured-banner');
+			}, FOCUS_DELAY_MS);
+		} else {
+			setBrowseMode('rows');
+			if (mainContentRef.current) {
+				mainContentRef.current.scrollTo({top: 0, behavior: 'smooth'});
+			}
+			setTimeout(() => {
+				Spotlight.focus('row-0');
+			}, FOCUS_DELAY_MS);
+		}
 	}, [settings.showFeaturedBar]);
 
 	const handleFeaturedPrev = useCallback(() => {
@@ -485,9 +482,9 @@ const Browse = ({
 			</div>
 
 			<div className={css.mainContent} ref={mainContentRef}>
-				{currentFeatured && (
+				{currentFeatured && settings.showFeaturedBar !== false && (
 					<div
-						className={`${css.featuredBanner} ${browseMode === 'rows' || settings.showFeaturedBar === false ? css.featuredHidden : ''}`}
+						className={`${css.featuredBanner} ${browseMode === 'rows' ? css.featuredHidden : ''}`}
 					>
 						<SpottableDiv
 							className={css.featuredInner}

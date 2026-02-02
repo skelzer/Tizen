@@ -64,7 +64,6 @@ const AppContent = (props) => {
 	const [selectedGenre, setSelectedGenre] = useState(null);
 	const [selectedGenreLibraryId, setSelectedGenreLibraryId] = useState(null);
 	const [playingItem, setPlayingItem] = useState(null);
-	const [playbackOptions, setPlaybackOptions] = useState(null);
 	const [panelHistory, setPanelHistory] = useState([]);
 	const [jellyseerrItem, setJellyseerrItem] = useState(null);
 	const [jellyseerrBrowse, setJellyseerrBrowse] = useState(null);
@@ -162,14 +161,18 @@ const AppContent = (props) => {
 		navigateTo(PANELS.BROWSE, false);
 	}, [navigateTo]);
 
-	const navigateToLibrary = useCallback((library) => {
-		if (library.CollectionType === 'livetv') {
-			navigateTo(PANELS.LIVETV);
-			return;
+	const handleShuffle = useCallback(async () => {
+		try {
+			const items = await api.getRandomItem('Movie,Series');
+			if (items.Items?.length > 0) {
+				const item = items.Items[0];
+				setSelectedItem(item);
+				navigateTo(PANELS.DETAILS);
+			}
+		} catch (err) {
+			console.error('Shuffle failed:', err);
 		}
-		setSelectedLibrary(library);
-		navigateTo(PANELS.LIBRARY);
-	}, [navigateTo]);
+	}, [api, navigateTo]);
 
 	const handleSelectItem = useCallback((item) => {
 		setSelectedItem(item);
@@ -185,6 +188,8 @@ const AppContent = (props) => {
 		setSelectedLibrary(library);
 		navigateTo(PANELS.LIBRARY);
 	}, [navigateTo]);
+
+	const [playbackOptions, setPlaybackOptions] = useState(null);
 
 	const handlePlay = useCallback((item, resume, options) => {
 		setPlayingItem(item);
@@ -249,6 +254,11 @@ const AppContent = (props) => {
 	const handleOpenJellyseerrRequests = useCallback(() => {
 		navigateTo(PANELS.JELLYSEERR_REQUESTS);
 	}, [navigateTo]);
+
+	const handleHome = useCallback(() => {
+		setPanelHistory([]);
+		setPanelIndex(PANELS.BROWSE);
+	}, []);
 
 	const handleSwitchUser = useCallback(async () => {
 		await logout();
@@ -321,12 +331,6 @@ const AppContent = (props) => {
 					<Browse
 						onSelectItem={handleSelectItem}
 						onSelectLibrary={handleSelectLibrary}
-						onOpenSearch={handleOpenSearch}
-						onOpenSettings={handleOpenSettings}
-						onOpenFavorites={handleOpenFavorites}
-						onOpenGenres={handleOpenGenres}
-						onOpenJellyseerr={handleOpenJellyseerr}
-						onSwitchUser={handleSwitchUser}
 					/>
 				);
 			case PANELS.DETAILS:
@@ -373,11 +377,11 @@ const AppContent = (props) => {
 				return playingItem ? (
 					<Player
 						item={playingItem}
+						initialAudioIndex={playbackOptions?.audioStreamIndex}
+						initialSubtitleIndex={playbackOptions?.subtitleStreamIndex}
 						onEnded={handlePlayerEnd}
 						onBack={handlePlayerEnd}
 						onPlayNext={handlePlayNext}
-						initialAudioIndex={playbackOptions?.audioIndex}
-						initialSubtitleIndex={playbackOptions?.subtitleIndex}
 					/>
 				) : null;
 			case PANELS.FAVORITES:
@@ -448,24 +452,53 @@ const AppContent = (props) => {
 					/>
 				);
 			default:
-				return <Browse onSelectItem={handleSelectItem} />;
+				return (
+					<Browse
+						onSelectItem={handleSelectItem}
+						onSelectLibrary={handleSelectLibrary}
+					/>
+				);
 		}
 	};
 
+	const getActiveView = () => {
+		switch (panelIndex) {
+			case PANELS.BROWSE: return 'home';
+			case PANELS.SEARCH: return 'search';
+			case PANELS.SETTINGS: return 'settings';
+			case PANELS.FAVORITES: return 'favorites';
+			case PANELS.GENRES: return 'genres';
+			case PANELS.JELLYSEERR_DISCOVER:
+			case PANELS.JELLYSEERR_DETAILS:
+			case PANELS.JELLYSEERR_REQUESTS:
+			case PANELS.JELLYSEERR_BROWSE:
+			case PANELS.JELLYSEERR_PERSON:
+				return 'discover';
+			case PANELS.LIBRARY: return selectedLibrary?.Id || '';
+			default: return '';
+		}
+	};
+
+	const showNavBar = panelIndex !== PANELS.LOGIN &&
+		panelIndex !== PANELS.PLAYER &&
+		panelIndex !== PANELS.ADD_SERVER &&
+		panelIndex !== PANELS.ADD_USER;
+
 	return (
 		<div className={css.app} {...props}>
-			{isAuthenticated && panelIndex !== PANELS.PLAYER && panelIndex !== PANELS.LOGIN && (
+			{showNavBar && (
 				<NavBar
-					onHome={() => navigateTo(PANELS.BROWSE, false)}
-					onSearch={handleOpenSearch}
-					onSettings={handleOpenSettings}
-					onFavorites={handleOpenFavorites}
-					onGenres={handleOpenGenres}
-					onShuffle={() => {}}
-					onJellyseerr={handleOpenJellyseerr}
-					onUserMenu={handleSwitchUser}
-					onSelectLibrary={navigateToLibrary}
+					activeView={getActiveView()}
 					libraries={libraries}
+					onHome={handleHome}
+					onSearch={handleOpenSearch}
+					onShuffle={handleShuffle}
+					onGenres={handleOpenGenres}
+					onFavorites={handleOpenFavorites}
+					onDiscover={handleOpenJellyseerr}
+					onSettings={handleOpenSettings}
+					onSelectLibrary={handleSelectLibrary}
+					onUserMenu={handleOpenSettings}
 				/>
 			)}
 			{renderView()}

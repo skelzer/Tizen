@@ -41,7 +41,7 @@
 }
 
 .content {
-	padding: 30px 95px 60px;
+	padding: 95px 60px 60px;
 }
 
 .header {
@@ -82,6 +82,7 @@
 	margin-bottom: 40px;
 	width: 100%;
 	gap: 50px;
+	align-items: flex-start;
 }
 
 .infoSection {
@@ -210,6 +211,11 @@
 	line-height: 1.6;
 	color: rgba(255, 255, 255, 0.85);
 	margin: 0;
+	max-height: 200px;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 5;
+	-webkit-box-orient: vertical;
 }
 
 .metadataGroup {
@@ -292,8 +298,19 @@
 	align-items: center;
 	justify-content: center;
 	background: transparent;
-	transition: all 0.2s ease;
-	outline: none;
+	transition: background 0.2s ease;
+}
+
+.btnPrimary {
+	.btnAction {
+		background: transparent;
+	}
+}
+
+.btnSecondary {
+	.btnAction {
+		background: transparent;
+	}
 }
 
 .btnIcon {
@@ -309,10 +326,12 @@
 
 .favorited {
 	color: #ff4757;
+	fill: #ff4757;
 }
 
 .watched {
 	color: #ff4757;
+	fill: #ff4757;
 }
 
 .btnLabel {
@@ -349,12 +368,13 @@
 .seasonsScroller {
 	overflow-x: auto;
 	overflow-y: visible;
-	padding-left: 95px;
-	padding-right: 95px;
+	padding-left: 60px;
+	padding-right: 60px;
 	scrollbar-width: none;
-	margin-left: -95px;
-	margin-right: -95px;
-	margin-bottom: 30px;
+	margin-left: -60px;
+	margin-right: -60px;
+	margin-bottom: 24px;
+	position: relative;
 
 	&::-webkit-scrollbar {
 		display: none;
@@ -365,76 +385,79 @@
 	display: flex;
 	padding: 20px 0;
 	width: max-content;
-	gap: 20px;
+	gap: 24px;
 }
 
 .seasonCard {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	min-width: 150px;
-	max-width: 150px;
 	cursor: pointer;
-	transition: transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+	transition: transform 0.2s ease;
 	outline: none;
+	position: relative;
+	z-index: 1;
 
 	&:focus {
-		outline: none;
 		transform: scale(1.05);
 		z-index: 10;
 
-		.seasonPoster {
+		.seasonPosterWrapper {
 			border-color: #ffffff;
+			box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 		}
 	}
 }
 
-.selectedSeason {
-	.seasonPoster {
-		border-color: rgba(255, 255, 255, 0.5);
+.seasonCardSelected {
+	.seasonPosterWrapper {
+		border-color: rgba(255, 255, 255, 0.6);
 	}
+
+	.seasonName {
+		color: #ffffff;
+		font-weight: 600;
+	}
+}
+
+.seasonPosterWrapper {
+	width: 240px;
+	height: 360px;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 3px solid transparent;
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	background: rgba(255, 255, 255, 0.1);
 }
 
 .seasonPoster {
-	width: 140px;
-	height: 210px;
-	border-radius: 8px;
-	overflow: hidden;
-	margin-bottom: 12px;
-	background: rgba(255, 255, 255, 0.1);
-	border: 3px solid transparent;
-	transition: border-color 0.2s;
-
-	img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
 }
 
-.seasonPlaceholder {
+.seasonPosterPlaceholder {
 	width: 100%;
 	height: 100%;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 14px;
-	font-weight: 500;
-	color: rgba(255, 255, 255, 0.5);
-	background: rgba(255, 255, 255, 0.1);
 	text-align: center;
-	padding: 10px;
+	padding: 12px;
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.7);
+	background: linear-gradient(135deg, rgba(60, 60, 60, 0.8), rgba(40, 40, 40, 0.8));
 }
 
 .seasonName {
-	font-size: 14px;
-	font-weight: 500;
-	color: white;
+	margin-top: 12px;
+	font-size: 18px;
+	color: rgba(255, 255, 255, 0.8);
 	text-align: center;
-	max-width: 100%;
+	max-width: 240px;
+	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .seasonTabs {
@@ -462,11 +485,11 @@
 .castScroller {
 	overflow-x: auto;
 	overflow-y: visible;
-	padding-left: 95px;
-	padding-right: 95px;
+	padding-left: 60px;
+	padding-right: 60px;
 	scrollbar-width: none;
-	margin-left: -95px;
-	margin-right: -95px;
+	margin-left: -60px;
+	margin-right: -60px;
 
 	&::-webkit-scrollbar {
 		display: none;
@@ -477,15 +500,18 @@
 	display: flex;
 	padding: 20px 0;
 	width: max-content;
-	gap: 30px;
+
+	> * + * {
+		margin-left: 30px;
+	}
 }
 
 .castCard {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	min-width: 180px;
-	max-width: 180px;
+	min-width: 200px;
+	max-width: 200px;
 	cursor: pointer;
 	transition: transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
 	outline: none;
@@ -502,11 +528,11 @@
 }
 
 .castImageWrapper {
-	width: 160px;
-	height: 160px;
+	width: 180px;
+	height: 180px;
 	border-radius: 50%;
 	overflow: hidden;
-	margin-bottom: 12px;
+	margin-bottom: 14px;
 	background: rgba(255, 255, 255, 0.1);
 	border: 4px solid transparent;
 	transition: border-color 0.2s;
@@ -524,7 +550,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 48px;
+	font-size: 56px;
 	font-weight: 600;
 	color: rgba(255, 255, 255, 0.5);
 	background: rgba(255, 255, 255, 0.1);

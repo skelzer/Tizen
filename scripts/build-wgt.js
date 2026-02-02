@@ -240,44 +240,55 @@ async function main() {
 		success(`Removed ${removedCount} unused locale folders`);
 	}
 	
-	// Step 6: Package WGT
+	// Step 6: Clean up old .wgt files in root
+	log('Cleaning up old .wgt files...');
+	const rootWgtFiles = fs.readdirSync(ROOT).filter(f => f.endsWith('.wgt'));
+	rootWgtFiles.forEach(f => {
+		fs.unlinkSync(path.join(ROOT, f));
+		log(`Removed ${f}`);
+	});
+	
+	// Step 7: Package WGT
 	log(`Packaging ${isSigned ? 'signed' : 'unsigned'} .wgt...`);
 	
 	const wgtName = 'Moonfin.wgt';
-	const wgtPath = path.join(DIST, wgtName);
-	
-	// Remove old wgt if exists
-	if (fs.existsSync(wgtPath)) fs.unlinkSync(wgtPath);
 	
 	let packageCmd;
 	if (isSigned) {
 		// Use the active signing profile
-		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}"`;
+		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}" -o "${ROOT}"`;
 	} else {
 		// Package without signing (for development/sideloading)
-		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}"`;
+		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}" -o "${ROOT}"`;
 	}
 	
-	if (!run(packageCmd, { cwd: DIST })) {
+	if (!run(packageCmd)) {
 		error('Packaging failed!');
 		process.exit(1);
 	}
 	
-	// Find the generated wgt
-	const wgtFiles = fs.readdirSync(DIST).filter(f => f.endsWith('.wgt'));
+	// Find the generated wgt in root
+	const wgtFiles = fs.readdirSync(ROOT).filter(f => f.endsWith('.wgt'));
 	if (wgtFiles.length === 0) {
 		error('No .wgt file generated!');
 		process.exit(1);
 	}
 	
-	const generatedWgt = path.join(DIST, wgtFiles[0]);
+	const generatedWgt = path.join(ROOT, wgtFiles[0]);
+	const finalWgt = path.join(ROOT, wgtName);
+	
+	// Rename to consistent name if needed
+	if (generatedWgt !== finalWgt) {
+		if (fs.existsSync(finalWgt)) fs.unlinkSync(finalWgt);
+		fs.renameSync(generatedWgt, finalWgt);
+	}
 	
 	// Show final size
-	const stats = fs.statSync(generatedWgt);
+	const stats = fs.statSync(finalWgt);
 	const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
-	success(`Package created: ${generatedWgt} (${sizeMB} MB)`);
+	success(`Package created: ${finalWgt} (${sizeMB} MB)`);
 	
-	// Step 6: Install to TV (if requested)
+	// Step 8: Install to TV (if requested)
 	if (shouldInstall) {
 		const sdb = findSDB();
 		if (!sdb) {
@@ -286,7 +297,7 @@ async function main() {
 		}
 		
 		log('Installing to TV...');
-		if (!run(`"${tizenCLI}" install -n "${generatedWgt}"`)) {
+		if (!run(`"${tizenCLI}" install -n "${finalWgt}"`)) {
 			error('Installation failed! Make sure your TV is connected.');
 			console.log('\nTo connect your TV:');
 			console.log('1. Enable Developer Mode on your TV');
@@ -302,13 +313,13 @@ async function main() {
 	console.log('\n' + green('═'.repeat(50)));
 	console.log(green('  Build Complete!'));
 	console.log(green('═'.repeat(50)));
-	console.log(`\n  Output: ${cyan(generatedWgt)}`);
+	console.log(`\n  Output: ${cyan(finalWgt)}`);
 	
 	if (!shouldInstall) {
 		console.log('\n  To install to your TV:');
 		console.log(`  ${yellow('npm run install-tv')}`);
 		console.log('\n  Or manually:');
-		console.log(`  ${yellow(`tizen install -n "${generatedWgt}"`)}`);
+		console.log(`  ${yellow(`tizen install -n "${wgtName}"`)}`);
 	}
 	
 	console.log('');
