@@ -174,7 +174,7 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 	}, []);
 
 	const handleSidebarKeyDown = useCallback((e) => {
-		if (e.keyCode === 39) {
+		if (e.keyCode === 37) {
 			e.preventDefault();
 			e.stopPropagation();
 			Spotlight.focus('settings-content');
@@ -182,7 +182,7 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 	}, []);
 
 	const handleContentKeyDown = useCallback((e) => {
-		if (e.keyCode === 37) {
+		if (e.keyCode === 39) {
 			const target = e.target;
 			if (target.tagName !== 'INPUT') {
 				e.preventDefault();
@@ -723,46 +723,46 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 			<h1>About</h1>
 			<div className={css.settingsGroup}>
 				<h2>Application</h2>
-				<div className={css.infoItem}>
+				<SpottableDiv className={css.infoItem} tabIndex={0}>
 					<span className={css.infoLabel}>App Version</span>
 					<span className={css.infoValue}>2.0.0</span>
-				</div>
-				<div className={css.infoItem}>
+				</SpottableDiv>
+				<SpottableDiv className={css.infoItem} tabIndex={0}>
 					<span className={css.infoLabel}>Platform</span>
 					<span className={css.infoValue}>
 						{capabilities?.tizenVersion
 							? `Tizen ${capabilities.tizenVersion}`
 							: 'Samsung TV'}
 					</span>
-				</div>
+				</SpottableDiv>
 			</div>
 
 			<div className={css.settingsGroup}>
 				<h2>Server</h2>
-				<div className={css.infoItem}>
+				<SpottableDiv className={css.infoItem} tabIndex={0}>
 					<span className={css.infoLabel}>Server URL</span>
 					<span className={css.infoValue}>{serverUrl || 'Not connected'}</span>
-				</div>
-				<div className={css.infoItem}>
+				</SpottableDiv>
+				<SpottableDiv className={css.infoItem} tabIndex={0}>
 					<span className={css.infoLabel}>Server Version</span>
 					<span className={css.infoValue}>{serverVersion || 'Loading...'}</span>
-				</div>
+				</SpottableDiv>
 			</div>
 
 			{capabilities && (
 				<div className={css.settingsGroup}>
 					<h2>Device</h2>
-					<div className={css.infoItem}>
+					<SpottableDiv className={css.infoItem} tabIndex={0}>
 						<span className={css.infoLabel}>Model</span>
 						<span className={css.infoValue}>{capabilities.modelName || 'Unknown'}</span>
-					</div>
+					</SpottableDiv>
 					{capabilities.firmwareVersion && (
-						<div className={css.infoItem}>
+						<SpottableDiv className={css.infoItem} tabIndex={0}>
 							<span className={css.infoLabel}>Firmware</span>
 							<span className={css.infoValue}>{capabilities.firmwareVersion}</span>
-						</div>
+						</SpottableDiv>
 					)}
-					<div className={css.infoItem}>
+					<SpottableDiv className={css.infoItem} tabIndex={0}>
 						<span className={css.infoLabel}>Resolution</span>
 						<span className={css.infoValue}>
 							{capabilities.screenWidth}x{capabilities.screenHeight}
@@ -770,14 +770,14 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 							{capabilities.uhd && !capabilities.uhd8K && ' (4K)'}
 							{capabilities.oled && ' OLED'}
 						</span>
-					</div>
+					</SpottableDiv>
 				</div>
 			)}
 
 			{capabilities && (
 				<div className={css.settingsGroup}>
 					<h2>Capabilities</h2>
-					<div className={css.infoItem}>
+					<SpottableDiv className={css.infoItem} tabIndex={0}>
 						<span className={css.infoLabel}>HDR</span>
 						<span className={css.infoValue}>
 							{[
@@ -785,14 +785,14 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 								capabilities.dolbyVision && 'Dolby Vision'
 							].filter(Boolean).join(', ') || 'Not supported'}
 						</span>
-					</div>
-					<div className={css.infoItem}>
+					</SpottableDiv>
+					<SpottableDiv className={css.infoItem} tabIndex={0}>
 						<span className={css.infoLabel}>Audio</span>
 						<span className={css.infoValue}>
 							{capabilities.dolbyAtmos ? 'Dolby Atmos' : 'Standard'}
 						</span>
-					</div>
-					<div className={css.infoItem}>
+					</SpottableDiv>
+					<SpottableDiv className={css.infoItem} tabIndex={0}>
 						<span className={css.infoLabel}>Video Codecs</span>
 						<span className={css.infoValue}>
 							{[
@@ -802,7 +802,7 @@ const Settings = ({onBack, onLogout, onAddServer, onAddUser}) => {
 								capabilities.av1 && 'AV1'
 							].filter(Boolean).join(', ')}
 						</span>
-					</div>
+					</SpottableDiv>
 				</div>
 			)}
 		</div>
