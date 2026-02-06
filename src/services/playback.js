@@ -144,7 +144,9 @@ const extractSubtitleStreams = (mediaSource) => {
 			isExternal: s.IsExternal,
 			isForced: s.IsForced,
 			isDefault: s.IsDefault,
-			isTextBased: ['srt', 'vtt', 'ass', 'ssa', 'sub', 'smi'].includes(s.Codec?.toLowerCase()),
+			// Text-based subtitle codecs that can be rendered client-side
+			// subrip = srt, webvtt = vtt, sami = smi
+			isTextBased: ['srt', 'subrip', 'vtt', 'webvtt', 'ass', 'ssa', 'sub', 'smi', 'sami'].includes(s.Codec?.toLowerCase()),
 			deliveryMethod: s.DeliveryMethod,
 			deliveryUrl: s.DeliveryMethod === 'External' && s.DeliveryUrl
 				? (s.DeliveryUrl.startsWith('http') ? s.DeliveryUrl : `${serverUrl}${s.DeliveryUrl}`)
@@ -237,10 +239,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 export const getSubtitleUrl = (subtitleStream) => {
 	if (!subtitleStream || !currentSession) return null;
 
-	if (subtitleStream.deliveryMethod === 'External' && subtitleStream.deliveryUrl) {
-		return subtitleStream.deliveryUrl;
-	}
-
+	// Request WebVTT for any text-based subtitle - server converts ASS/SSA/SRT as needed
 	if (subtitleStream.isTextBased) {
 		const {itemId, mediaSourceId} = currentSession;
 		const serverUrl = jellyfinApi.getServerUrl();
@@ -249,6 +248,41 @@ export const getSubtitleUrl = (subtitleStream) => {
 	}
 
 	return null;
+};
+
+/**
+ * Fetch subtitle track events as JSON data for custom rendering
+ * This is required on Tizen because native <track> elements don't work reliably with AVPlay
+ * The .js format returns JSON with TrackEvents array containing StartPositionTicks, EndPositionTicks, Text
+ */
+export const fetchSubtitleData = async (subtitleStream) => {
+	if (!subtitleStream || !currentSession) return null;
+
+	const {itemId, mediaSourceId} = currentSession;
+	const serverUrl = jellyfinApi.getServerUrl();
+	const apiKey = jellyfinApi.getApiKey();
+
+	if (!subtitleStream.isTextBased) {
+		console.log('[Playback] Subtitle stream is not text-based, cannot fetch as JSON');
+		return null;
+	}
+
+	// Jellyfin returns JSON when requesting .js format instead of .vtt
+	const url = `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${subtitleStream.index}/Stream.js?api_key=${apiKey}`;
+
+	try {
+		console.log('[Playback] Fetching subtitle data from:', url);
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch subtitles: ${response.status}`);
+		}
+		const data = await response.json();
+		console.log(`[Playback] Loaded ${data?.TrackEvents?.length || 0} subtitle events`);
+		return data;
+	} catch (err) {
+		console.error('[Playback] Failed to fetch subtitle data:', err);
+		return null;
+	}
 };
 
 export const getChapterImageUrl = (itemId, chapterIndex, width = 320) => {
@@ -510,6 +544,7 @@ export default {
 	getPlaybackInfo,
 	getPlaybackUrl,
 	getSubtitleUrl,
+	fetchSubtitleData,
 	getChapterImageUrl,
 	getTrickplayInfo,
 	getMediaSegments,

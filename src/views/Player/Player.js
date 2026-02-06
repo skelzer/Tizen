@@ -160,6 +160,8 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 	const [selectedAudioIndex, setSelectedAudioIndex] = useState(null);
 	const [selectedSubtitleIndex, setSelectedSubtitleIndex] = useState(-1);
 	const [subtitleUrl, setSubtitleUrl] = useState(null);
+	const [subtitleTrackEvents, setSubtitleTrackEvents] = useState(null);
+	const [currentSubtitleText, setCurrentSubtitleText] = useState(null);
 	const [controlsVisible, setControlsVisible] = useState(false);
 	const [activeModal, setActiveModal] = useState(null);
 	const [playbackRate, setPlaybackRate] = useState(1);
@@ -265,23 +267,61 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 				}
 
 				// Handle initial subtitle selection
+				// On Tizen, we fetch subtitle data as JSON and render via custom overlay
+				// because native <track> elements don't work reliably with AVPlay
+				const loadSubtitleData = async (sub) => {
+					if (sub && sub.isTextBased) {
+						try {
+							const data = await playback.fetchSubtitleData(sub);
+							if (data && data.TrackEvents) {
+								setSubtitleTrackEvents(data.TrackEvents);
+								console.log('[Player] Loaded', data.TrackEvents.length, 'subtitle events');
+							} else {
+								setSubtitleTrackEvents(null);
+							}
+						} catch (err) {
+							console.error('[Player] Error fetching subtitle data:', err);
+							setSubtitleTrackEvents(null);
+						}
+					} else {
+						setSubtitleTrackEvents(null);
+					}
+					setCurrentSubtitleText(null);
+				};
+
 				if (initialSubtitleIndex !== undefined && initialSubtitleIndex !== null) {
-					const initialSub = result.subtitleStreams?.find(s => s.index === initialSubtitleIndex);
-					if (initialSub) {
-						setSelectedSubtitleIndex(initialSubtitleIndex);
-						setSubtitleUrl(playback.getSubtitleUrl(initialSub));
+					if (initialSubtitleIndex >= 0) {
+						const initialSub = result.subtitleStreams?.find(s => s.index === initialSubtitleIndex);
+						if (initialSub) {
+							setSelectedSubtitleIndex(initialSubtitleIndex);
+							setSubtitleUrl(playback.getSubtitleUrl(initialSub));
+							await loadSubtitleData(initialSub);
+						}
+					} else {
+						// -1 means subtitles off
+						setSelectedSubtitleIndex(-1);
+						setSubtitleUrl(null);
+						setSubtitleTrackEvents(null);
 					}
 				} else if (settings.subtitleMode === 'always') {
 					const defaultSub = result.subtitleStreams?.find(s => s.isDefault);
 					if (defaultSub) {
 						setSelectedSubtitleIndex(defaultSub.index);
 						setSubtitleUrl(playback.getSubtitleUrl(defaultSub));
+						await loadSubtitleData(defaultSub);
+					} else if (result.subtitleStreams?.length > 0) {
+						// No default marked, use first available
+						const firstSub = result.subtitleStreams[0];
+						setSelectedSubtitleIndex(firstSub.index);
+						setSubtitleUrl(playback.getSubtitleUrl(firstSub));
+						await loadSubtitleData(firstSub);
 					}
 				} else if (settings.subtitleMode === 'forced') {
 					const forcedSub = result.subtitleStreams?.find(s => s.isForced);
 					if (forcedSub) {
 						setSelectedSubtitleIndex(forcedSub.index);
 						setSubtitleUrl(playback.getSubtitleUrl(forcedSub));
+						await loadSubtitleData(forcedSub);
 					}
 				}
 
@@ -428,6 +468,18 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 				healthMonitorRef.current.recordProgress();
 			}
 
+			// Update custom subtitle text - match current position to subtitle events
+			if (subtitleTrackEvents && subtitleTrackEvents.length > 0) {
+				let foundSubtitle = null;
+				for (const event of subtitleTrackEvents) {
+					if (ticks >= event.StartPositionTicks && ticks <= event.EndPositionTicks) {
+						foundSubtitle = event.Text;
+						break;
+					}
+				}
+				setCurrentSubtitleText(foundSubtitle);
+			}
+
 			// Check for intro skip
 			if (mediaSegments && settings.skipIntro) {
 				const {introStart, introEnd, creditsStart} = mediaSegments;
@@ -456,7 +508,7 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 				}
 			}
 		}
-	}, [mediaSegments, settings.skipIntro, settings.skipCredits, settings.autoPlay, nextEpisode, showSkipCredits, showNextEpisode, startNextEpisodeCountdown, handlePlayNextEpisode]);
+	}, [mediaSegments, settings.skipIntro, settings.skipCredits, settings.autoPlay, nextEpisode, showSkipCredits, showNextEpisode, startNextEpisodeCountdown, handlePlayNextEpisode, subtitleTrackEvents]);
 
 	const handleWaiting = useCallback(() => {
 		setIsBuffering(true);
@@ -592,16 +644,39 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 		}
 	}, [playMethod, closeModal]);
 
-	const handleSelectSubtitle = useCallback((e) => {
+	const handleSelectSubtitle = useCallback(async (e) => {
 		const index = parseInt(e.currentTarget.dataset.index, 10);
 		if (isNaN(index)) return;
 		if (index === -1) {
 			setSelectedSubtitleIndex(-1);
 			setSubtitleUrl(null);
+			setSubtitleTrackEvents(null);
+			setCurrentSubtitleText(null);
 		} else {
 			setSelectedSubtitleIndex(index);
 			const stream = subtitleStreams.find(s => s.index === index);
 			setSubtitleUrl(stream ? playback.getSubtitleUrl(stream) : null);
+
+			// Fetch subtitle data as JSON for custom rendering (Tizen doesn't support native <track>)
+			if (stream && stream.isTextBased) {
+				try {
+					const data = await playback.fetchSubtitleData(stream);
+					if (data && data.TrackEvents) {
+						setSubtitleTrackEvents(data.TrackEvents);
+						console.log('[Player] Loaded', data.TrackEvents.length, 'subtitle events');
+					} else {
+						setSubtitleTrackEvents(null);
+					}
+				} catch (err) {
+					console.error('[Player] Error fetching subtitle data:', err);
+					setSubtitleTrackEvents(null);
+				}
+			} else {
+				// PGS/image-based subtitles - cannot render client-side, need burn-in via transcode
+				console.log('[Player] Image-based subtitle (codec:', stream?.codec, ') - requires burn-in via transcode');
+				setSubtitleTrackEvents(null);
+			}
+			setCurrentSubtitleText(null);
 		}
 		closeModal();
 	}, [subtitleStreams, closeModal]);
@@ -833,9 +908,22 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 				onPlaying={handlePlaying}
 				onEnded={handleEnded}
 				onError={handleError}
-			>
-				{subtitleUrl && <track kind="subtitles" src={subtitleUrl} default />}
-			</video>
+			/>
+
+			{/* Custom Subtitle Overlay - Tizen doesn't support native <track> elements with AVPlay */}
+			{currentSubtitleText && (
+				<div className={css.subtitleOverlay}>
+					<div
+						className={css.subtitleText}
+						dangerouslySetInnerHTML={{
+							__html: currentSubtitleText
+								.replace(/\\N/gi, '<br/>')
+								.replace(/\r?\n/gi, '<br/>')
+								.replace(/{\\.*?}/gi, '') // Remove ASS/SSA style tags
+						}}
+					/>
+				</div>
+			)}
 
 			{/* Video Dimmer */}
 			<div className={`${css.videoDimmer} ${controlsVisible ? css.visible : ''}`} />
