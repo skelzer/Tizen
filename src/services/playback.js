@@ -12,6 +12,30 @@ let currentSession = null;
 let progressInterval = null;
 let healthMonitor = null;
 
+// Cross-server support: get API instance based on item or options
+const getApiForItem = (item) => {
+	if (item?._serverUrl && item?._serverAccessToken && item?._serverUserId) {
+		return jellyfinApi.createApiForServer(item._serverUrl, item._serverAccessToken, item._serverUserId);
+	}
+	return jellyfinApi.api;
+};
+
+// Get server credentials from item or fallback to current
+const getServerCredentials = (item) => {
+	if (item?._serverUrl && item?._serverAccessToken) {
+		return {
+			serverUrl: item._serverUrl,
+			accessToken: item._serverAccessToken,
+			userId: item._serverUserId
+		};
+	}
+	return {
+		serverUrl: jellyfinApi.getServerUrl(),
+		accessToken: jellyfinApi.getApiKey(),
+		userId: jellyfinApi.getUserId?.() || null
+	};
+};
+
 const selectMediaSource = (mediaSources, capabilities, options) => {
 	if (options.mediaSourceId) {
 		const source = mediaSources.find(s => s.Id === options.mediaSourceId);
@@ -69,9 +93,9 @@ const determinePlayMethod = (mediaSource, capabilities) => {
 	return PlayMethod.Transcode;
 };
 
-const buildPlaybackUrl = (itemId, mediaSource, playSessionId, playMethod) => {
-	const serverUrl = jellyfinApi.getServerUrl();
-	const apiKey = jellyfinApi.getApiKey();
+const buildPlaybackUrl = (itemId, mediaSource, playSessionId, playMethod, credentials = null) => {
+	const serverUrl = credentials?.serverUrl || jellyfinApi.getServerUrl();
+	const apiKey = credentials?.accessToken || jellyfinApi.getApiKey();
 
 	console.log('[playback] buildPlaybackUrl:', {
 		itemId,
@@ -80,7 +104,8 @@ const buildPlaybackUrl = (itemId, mediaSource, playSessionId, playMethod) => {
 		playMethod,
 		serverUrl,
 		apiKeyType: typeof apiKey,
-		apiKeyLength: apiKey?.length
+		apiKeyLength: apiKey?.length,
+		isCrossServer: !!credentials
 	});
 
 	if (playMethod === PlayMethod.DirectPlay) {
@@ -130,9 +155,9 @@ const extractAudioStreams = (mediaSource) => {
 		}));
 };
 
-const extractSubtitleStreams = (mediaSource) => {
+const extractSubtitleStreams = (mediaSource, credentials = null) => {
 	if (!mediaSource.MediaStreams) return [];
-	const serverUrl = jellyfinApi.getServerUrl();
+	const serverUrl = credentials?.serverUrl || jellyfinApi.getServerUrl();
 
 	return mediaSource.MediaStreams
 		.filter(s => s.Type === 'Subtitle')
@@ -168,7 +193,11 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	const deviceProfile = await getJellyfinDeviceProfile();
 	const capabilities = await getDeviceCapabilities();
 
-	const playbackInfo = await jellyfinApi.api.getPlaybackInfo(itemId, {
+	// Cross-server support: use item's server if available
+	const api = options.item ? getApiForItem(options.item) : jellyfinApi.api;
+	const creds = options.item ? getServerCredentials(options.item) : null;
+
+	const playbackInfo = await api.getPlaybackInfo(itemId, {
 		DeviceProfile: deviceProfile,
 		StartTimeTicks: options.startPositionTicks || 0,
 		AutoOpenLiveStream: true,
@@ -187,9 +216,9 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 
 	const mediaSource = selectMediaSource(playbackInfo.MediaSources, capabilities, options);
 	const playMethod = determinePlayMethod(mediaSource, capabilities);
-	const url = buildPlaybackUrl(itemId, mediaSource, playbackInfo.PlaySessionId, playMethod);
+	const url = buildPlaybackUrl(itemId, mediaSource, playbackInfo.PlaySessionId, playMethod, creds);
 	const audioStreams = extractAudioStreams(mediaSource);
-	const subtitleStreams = extractSubtitleStreams(mediaSource);
+	const subtitleStreams = extractSubtitleStreams(mediaSource, creds);
 	const chapters = extractChapters(mediaSource);
 
 	currentSession = {
@@ -202,7 +231,9 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		capabilities,
 		audioStreamIndex: options.audioStreamIndex ?? mediaSource.DefaultAudioStreamIndex,
 		subtitleStreamIndex: options.subtitleStreamIndex ?? mediaSource.DefaultSubtitleStreamIndex,
-		maxBitrate: options.maxBitrate
+		maxBitrate: options.maxBitrate,
+		// Cross-server support: store server credentials for progress reporting
+		serverCredentials: creds
 	};
 
 	console.log(`[playback] Playing ${itemId} via ${playMethod}`);
@@ -241,9 +272,9 @@ export const getSubtitleUrl = (subtitleStream) => {
 
 	// Request WebVTT for any text-based subtitle - server converts ASS/SSA/SRT as needed
 	if (subtitleStream.isTextBased) {
-		const {itemId, mediaSourceId} = currentSession;
-		const serverUrl = jellyfinApi.getServerUrl();
-		const apiKey = jellyfinApi.getApiKey();
+		const {itemId, mediaSourceId, serverCredentials} = currentSession;
+		const serverUrl = serverCredentials?.serverUrl || jellyfinApi.getServerUrl();
+		const apiKey = serverCredentials?.accessToken || jellyfinApi.getApiKey();
 		return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${subtitleStream.index}/Stream.vtt?api_key=${apiKey}`;
 	}
 
@@ -258,9 +289,9 @@ export const getSubtitleUrl = (subtitleStream) => {
 export const fetchSubtitleData = async (subtitleStream) => {
 	if (!subtitleStream || !currentSession) return null;
 
-	const {itemId, mediaSourceId} = currentSession;
-	const serverUrl = jellyfinApi.getServerUrl();
-	const apiKey = jellyfinApi.getApiKey();
+	const {itemId, mediaSourceId, serverCredentials} = currentSession;
+	const serverUrl = serverCredentials?.serverUrl || jellyfinApi.getServerUrl();
+	const apiKey = serverCredentials?.accessToken || jellyfinApi.getApiKey();
 
 	if (!subtitleStream.isTextBased) {
 		console.log('[Playback] Subtitle stream is not text-based, cannot fetch as JSON');
@@ -397,7 +428,16 @@ export const reportProgress = async (positionTicks, options = {}) => {
 	if (!currentSession) return;
 
 	try {
-		await jellyfinApi.api.reportPlaybackProgress({
+		// Use session's server credentials for cross-server support
+		const api = currentSession.serverCredentials
+			? jellyfinApi.createApiForServer(
+				currentSession.serverCredentials.serverUrl,
+				currentSession.serverCredentials.accessToken,
+				currentSession.serverCredentials.userId
+			)
+			: jellyfinApi.api;
+
+		await api.reportPlaybackProgress({
 			ItemId: currentSession.itemId,
 			PlaySessionId: currentSession.playSessionId,
 			MediaSourceId: currentSession.mediaSourceId,
@@ -433,7 +473,16 @@ export const reportStop = async (positionTicks) => {
 	stopHealthMonitoring();
 
 	try {
-		await jellyfinApi.api.reportPlaybackStopped({
+		// Use session's server credentials for cross-server support
+		const api = currentSession.serverCredentials
+			? jellyfinApi.createApiForServer(
+				currentSession.serverCredentials.serverUrl,
+				currentSession.serverCredentials.accessToken,
+				currentSession.serverCredentials.userId
+			)
+			: jellyfinApi.api;
+
+		await api.reportPlaybackStopped({
 			ItemId: currentSession.itemId,
 			PlaySessionId: currentSession.playSessionId,
 			MediaSourceId: currentSession.mediaSourceId,

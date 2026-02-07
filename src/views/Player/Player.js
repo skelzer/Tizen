@@ -248,7 +248,8 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 				const result = await playback.getPlaybackInfo(item.Id, {
 					startPositionTicks: startPosition,
 					maxBitrate: selectedQuality || settings.maxBitrate,
-					preferTranscode: settings.preferTranscode
+					preferTranscode: settings.preferTranscode,
+					item: item
 				});
 
 				setMediaUrl(result.url);
@@ -556,7 +557,8 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 					maxBitrate: selectedQuality || settings.maxBitrate,
 					enableDirectPlay: false,
 					enableDirectStream: false,
-					enableTranscoding: true
+					enableTranscoding: true,
+					item: item
 				});
 
 				if (result.url) {
@@ -571,7 +573,7 @@ const Player = ({item, onEnded, onBack, onPlayNext, initialAudioIndex, initialSu
 		}
 
 		setError('Playback failed. The file format may not be supported.');
-	}, [hasTriedTranscode, playMethod, item.Id, selectedQuality, settings.maxBitrate]);
+	}, [hasTriedTranscode, playMethod, item, selectedQuality, settings.maxBitrate]);
 
 	// Handle back button
 	const handleBack = useCallback(async () => {

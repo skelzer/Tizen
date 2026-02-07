@@ -4,6 +4,8 @@ import {VirtualGridList} from '@enact/sandstone/VirtualList';
 import Popup from '@enact/sandstone/Popup';
 import Button from '@enact/sandstone/Button';
 import {useAuth} from '../../context/AuthContext';
+import {useSettings} from '../../context/SettingsContext';
+import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import {getImageUrl, getBackdropId} from '../../utils/helpers';
 import {isBackKey} from '../../utils/tizenKeys';
@@ -22,7 +24,9 @@ const SORT_OPTIONS = [
 ];
 
 const Genres = ({onSelectGenre, onBack}) => {
-	const {api, serverUrl} = useAuth();
+	const {api, serverUrl, hasMultipleServers} = useAuth();
+	const {settings} = useSettings();
+	const unifiedMode = settings.unifiedLibraryMode && hasMultipleServers;
 	const [genres, setGenres] = useState([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [sortOrder, setSortOrder] = useState('name-asc');
@@ -36,17 +40,25 @@ const Genres = ({onSelectGenre, onBack}) => {
 	useEffect(() => {
 		const loadLibraries = async () => {
 			try {
-				const result = await api.getLibraries();
-				const videoLibraries = (result.Items || []).filter(lib =>
-					lib.CollectionType === 'movies' || lib.CollectionType === 'tvshows'
-				);
+				let videoLibraries;
+				if (unifiedMode) {
+					const allLibraries = await connectionPool.getLibrariesFromAllServers();
+					videoLibraries = allLibraries.filter(lib =>
+						lib.CollectionType === 'movies' || lib.CollectionType === 'tvshows'
+					);
+				} else {
+					const result = await api.getLibraries();
+					videoLibraries = (result.Items || []).filter(lib =>
+						lib.CollectionType === 'movies' || lib.CollectionType === 'tvshows'
+					);
+				}
 				setLibraries(videoLibraries);
 			} catch (err) {
 				console.error('Failed to load libraries:', err);
 			}
 		};
 		loadLibraries();
-	}, [api]);
+	}, [api, unifiedMode]);
 
 	useEffect(() => {
 		const loadGenres = async () => {
@@ -57,56 +69,136 @@ const Genres = ({onSelectGenre, onBack}) => {
 					params.ParentId = selectedLibrary.Id;
 				}
 
-				const genresResult = await api.getGenres(params.ParentId);
-				const genreList = genresResult.Items || [];
+				let genreList;
+				if (unifiedMode && !selectedLibrary) {
+					genreList = await connectionPool.getGenresFromAllServers();
 
-				const genresWithData = await Promise.all(
-					genreList.map(async (genre) => {
-						try {
-							const itemParams = {
-								Genres: genre.Name,
-								IncludeItemTypes: 'Movie,Series',
-								Recursive: true,
-								Limit: 5,
-								SortBy: 'Random',
-								EnableTotalRecordCount: true,
-								Fields: 'PrimaryImageAspectRatio,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId'
-							};
-
-							if (selectedLibrary) {
-								itemParams.ParentId = selectedLibrary.Id;
-							}
-
-							const itemsResult = await api.getItems(itemParams);
-							const items = itemsResult.Items || [];
-							const itemCount = itemsResult.TotalRecordCount || 0;
-
-							if (itemCount === 0) return null;
-
-							let backdropUrl = null;
-							for (const item of items) {
+					// Fetch a pool of random backdrop images from all servers
+					let backdropPool = [];
+					try {
+						const randomItems = await connectionPool.getRandomItemsFromAllServers('both', 30);
+						backdropPool = randomItems
+							.filter(item => {
 								const backdropId = getBackdropId(item);
-								if (backdropId) {
-									backdropUrl = getImageUrl(serverUrl, backdropId, 'Backdrop', {maxWidth: 780, quality: 80});
-									break;
-								}
-							}
+								return backdropId !== null;
+							})
+							.map(item => {
+								const backdropId = getBackdropId(item);
+								const itemServerUrl = item._serverUrl || serverUrl;
+								return getImageUrl(itemServerUrl, backdropId, 'Backdrop', {maxWidth: 780, quality: 80});
+							});
+					} catch (err) {
+						console.warn('[Genres] Failed to fetch backdrop pool:', err);
+					}
 
-							return {
-								id: genre.Id,
-								name: genre.Name,
-								itemCount,
-								backdropUrl
-							};
-						} catch (err) {
-							console.error(`Failed to get data for genre ${genre.Name}:`, err);
-							return null;
+					const unifiedGenres = genreList.map((genre, index) => ({
+						id: genre.Id,
+						name: genre.Name,
+						itemCount: genre.ChildCount || 0,
+						backdropUrl: backdropPool.length > 0 ? backdropPool[index % backdropPool.length] : null,
+						_unifiedGenre: true
+					}));
+					setGenres(unifiedGenres);
+					setIsLoading(false);
+					return;
+				} else if (unifiedMode && selectedLibrary?._serverUrl) {
+					const serverApi = connectionPool.getApiForItem(selectedLibrary);
+					if (serverApi) {
+						const result = await serverApi.getGenres(selectedLibrary.Id);
+						genreList = (result.Items || []).map(g => ({
+							...g,
+							_serverUrl: selectedLibrary._serverUrl,
+							_serverAccessToken: selectedLibrary._serverAccessToken,
+							_serverUserId: selectedLibrary._serverUserId,
+							_serverName: selectedLibrary._serverName,
+							_serverId: selectedLibrary._serverId
+						}));
+					} else {
+						genreList = [];
+					}
+				} else {
+					const genresResult = await api.getGenres(params.ParentId);
+					genreList = genresResult.Items || [];
+				}
+
+				// Get item count and backdrop for each genre (single server mode)
+				// Process in batches to avoid overwhelming the server
+				const BATCH_SIZE = 10;
+				const getGenreData = async (genre) => {
+					try {
+						const itemParams = {
+							Genres: genre.Name,
+							IncludeItemTypes: 'Movie,Series',
+							Recursive: true,
+							Limit: 5,
+							SortBy: 'Random',
+							EnableTotalRecordCount: true,
+							Fields: 'BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId'
+						};
+
+						if (selectedLibrary) {
+							itemParams.ParentId = selectedLibrary.Id;
 						}
-					})
-				);
 
-				// Filter out null entries (empty genres) and apply sort
-				const validGenres = genresWithData.filter(g => g !== null);
+						let items, itemCount;
+						if (unifiedMode && selectedLibrary?._serverUrl) {
+							const serverApi = connectionPool.getApiForItem(selectedLibrary);
+							if (serverApi) {
+								const result = await serverApi.getItems(itemParams);
+								items = (result.Items || []).map(item => ({
+									...item,
+									_serverUrl: selectedLibrary._serverUrl
+								}));
+								itemCount = result.TotalRecordCount || 0;
+							} else {
+								items = [];
+								itemCount = 0;
+							}
+						} else {
+							const itemsResult = await api.getItems(itemParams);
+							items = itemsResult.Items || [];
+							itemCount = itemsResult.TotalRecordCount || 0;
+						}
+
+						if (itemCount === 0) return null;
+
+						let backdropUrl = null;
+						for (const item of items) {
+							const backdropId = getBackdropId(item);
+							if (backdropId) {
+								const itemServerUrl = item._serverUrl || serverUrl;
+								backdropUrl = getImageUrl(itemServerUrl, backdropId, 'Backdrop', {maxWidth: 780, quality: 80});
+								break;
+							}
+						}
+
+						return {
+							id: genre.Id,
+							name: genre.Name,
+							itemCount,
+							backdropUrl,
+							_serverUrl: genre._serverUrl,
+							_serverName: genre._serverName,
+							_serverId: genre._serverId,
+							_serverAccessToken: genre._serverAccessToken,
+							_serverUserId: genre._serverUserId
+						};
+					} catch (err) {
+						console.error(`Failed to get data for genre ${genre.Name}:`, err);
+						return null;
+					}
+				};
+
+				// Process in batches
+				const allGenresWithData = [];
+				for (let i = 0; i < genreList.length; i += BATCH_SIZE) {
+					const batch = genreList.slice(i, i + BATCH_SIZE);
+					const batchResults = await Promise.all(batch.map(getGenreData));
+					allGenresWithData.push(...batchResults);
+				}
+
+				// Filter out null entries (empty genres)
+				const validGenres = allGenresWithData.filter(g => g !== null);
 				setGenres(validGenres);
 			} catch (err) {
 				console.error('Failed to load genres:', err);
@@ -116,7 +208,7 @@ const Genres = ({onSelectGenre, onBack}) => {
 		};
 
 		loadGenres();
-	}, [api, serverUrl, selectedLibrary]);
+	}, [api, serverUrl, selectedLibrary, unifiedMode]);
 
 	const sortedGenres = useMemo(() => {
 		const sorted = [...genres];
@@ -148,10 +240,9 @@ const Genres = ({onSelectGenre, onBack}) => {
 		if (genreIndex !== undefined) {
 			const genre = sortedGenresRef.current[parseInt(genreIndex, 10)];
 			if (genre) {
-				onSelectGenre?.({
-					name: genre.name,
-					id: genre.id
-				}, selectedLibrary?.Id);
+				// For unified genres (from all servers) or cross-server genres, don't pass a libraryId
+				const libraryId = (genre._unifiedGenre || genre._serverUrl) ? null : selectedLibrary?.Id;
+				onSelectGenre?.(genre, libraryId);
 			}
 		}
 	}, [onSelectGenre, selectedLibrary]);
@@ -200,7 +291,9 @@ const Genres = ({onSelectGenre, onBack}) => {
 			try {
 				const lib = JSON.parse(libData);
 				setSelectedLibrary(lib);
-			} catch (e) { /* ignore */ }
+			} catch {
+				// Invalid library data
+			}
 		}
 		setShowLibraryModal(false);
 	}, []);
@@ -231,7 +324,9 @@ const Genres = ({onSelectGenre, onBack}) => {
 				</div>
 				<div className={css.genreInfo}>
 					<div className={css.genreName}>{genre.name}</div>
-					<div className={css.genreCount}>{genre.itemCount} items</div>
+					{genre.itemCount > 0 && (
+						<div className={css.genreCount}>{genre.itemCount} items</div>
+					)}
 				</div>
 			</SpottableDiv>
 		);
@@ -336,13 +431,13 @@ const Genres = ({onSelectGenre, onBack}) => {
 					</Button>
 					{libraries.map(lib => (
 						<Button
-							key={lib.Id}
+							key={lib.Id + (lib._serverId || '')}
 							className={css.popupOption}
 							selected={selectedLibrary?.Id === lib.Id}
 							onClick={handleLibrarySelect}
 							data-library={JSON.stringify(lib)}
 						>
-							{lib.Name}
+							{unifiedMode && lib._serverName ? `${lib.Name} (${lib._serverName})` : lib.Name}
 						</Button>
 					))}
 				</div>

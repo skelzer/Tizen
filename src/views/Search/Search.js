@@ -3,7 +3,9 @@ import Spottable from '@enact/spotlight/Spottable';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import Spotlight from '@enact/spotlight';
 import {useAuth} from '../../context/AuthContext';
+import {useSettings} from '../../context/SettingsContext';
 import {useJellyseerr} from '../../context/JellyseerrContext';
+import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ProxiedImage from '../../components/ProxiedImage';
 import {getImageUrl} from '../../utils/helpers';
@@ -27,7 +29,9 @@ const SearchIcon = () => (
 );
 
 const Search = ({onSelectItem, onSelectPerson, onBack}) => {
-	const {api, serverUrl} = useAuth();
+	const {api, serverUrl, hasMultipleServers} = useAuth();
+	const {settings} = useSettings();
+	const unifiedMode = settings.unifiedLibraryMode && hasMultipleServers;
 	const {isEnabled: jellyseerrEnabled, api: jellyseerrApi} = useJellyseerr();
 	const [query, setQuery] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
@@ -101,8 +105,14 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 		});
 
 		try {
-			const result = await api.search(searchQuery, MAX_SEARCH_RESULTS);
-			const items = result.Items || [];
+			let items;
+			if (unifiedMode) {
+				// Search all servers in unified mode
+				items = await connectionPool.searchAllServers(searchQuery, MAX_SEARCH_RESULTS);
+			} else {
+				const result = await api.search(searchQuery, MAX_SEARCH_RESULTS);
+				items = result.Items || [];
+			}
 
 			const categorized = {
 				movies: items.filter(item => item.Type === 'Movie'),
@@ -131,7 +141,7 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [api, jellyseerrEnabled, jellyseerrApi]);
+	}, [api, jellyseerrEnabled, jellyseerrApi, unifiedMode]);
 
 	const handleInputChange = useCallback((e) => {
 		const value = e.target.value;
@@ -299,7 +309,9 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 		const isPerson = item.Type === 'Person';
 		const isEpisode = item.Type === 'Episode';
 		const hasImage = item.ImageTags?.Primary || item.PrimaryImageTag;
-		const imageUrl = hasImage ? getImageUrl(serverUrl, item.Id, 'Primary') : null;
+		// Support cross-server items with their own server URL
+		const itemServerUrl = item._serverUrl || serverUrl;
+		const imageUrl = hasImage ? getImageUrl(itemServerUrl, item.Id, 'Primary') : null;
 
 		let subtitle = '';
 		if (isEpisode) {
@@ -319,8 +331,9 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 				data-item-type="jellyfin"
 				spotlightId={`${rowId}-item-${index}`}
 			>
-				<div className={`${css.cardImageWrapper} ${isPerson ? css.personImageWrapper : ''} ${isEpisode ? css.episodeImageWrapper : ''}`}>
-					{imageUrl ? (
+				<div className={`${css.cardImageWrapper} ${isPerson ? css.personImageWrapper : ''} ${isEpisode ? css.episodeImageWrapper : ''}`}>				{unifiedMode && item._serverName && (
+					<div className={css.serverBadge}>{item._serverName}</div>
+				)}					{imageUrl ? (
 						<img className={`${css.cardImage} ${isPerson ? css.personImage : ''}`} src={imageUrl} alt={item.Name} />
 					) : (
 						<div className={css.cardPlaceholder}>{isPerson ? '👤' : '🎬'}</div>
@@ -332,7 +345,7 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 				</div>
 			</SpottableDiv>
 		);
-	}, [serverUrl, handleCardClick]);
+	}, [serverUrl, handleCardClick, unifiedMode]);
 
 	return (
 		<div className={css.searchContainer}>

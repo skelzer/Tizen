@@ -3,38 +3,57 @@ import Spottable from '@enact/spotlight/Spottable';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import Spotlight from '@enact/spotlight';
 import {useAuth} from '../../context/AuthContext';
+import {useSettings} from '../../context/SettingsContext';
+import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ProxiedImage from '../../components/ProxiedImage';
 import {getImageUrl, getPrimaryImageId} from '../../utils/helpers';
-import {isBackKey} from '../../utils/tizenKeys';
 
 import css from './Favorites.module.less';
 
 const SpottableDiv = Spottable('div');
-const SpottableButton = Spottable('button');
 const RowContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-first'}, 'div');
 
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 12;
 
 const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
-	const {api, serverUrl} = useAuth();
-	const [items, setItems] = useState({movies: [], shows: [], episodes: [], people: []});
+	const {api, serverUrl, hasMultipleServers} = useAuth();
+	const {settings} = useSettings();
+	const unifiedMode = settings.unifiedLibraryMode && hasMultipleServers;
+	const [items, setItems] = useState({
+		movies: [],
+		shows: [],
+		episodes: [],
+		people: []
+	});
 	const [isLoading, setIsLoading] = useState(true);
-	const [displayCounts, setDisplayCounts] = useState({});
+	const [displayCounts, setDisplayCounts] = useState({
+		movies: ITEMS_PER_PAGE,
+		shows: ITEMS_PER_PAGE,
+		episodes: ITEMS_PER_PAGE,
+		people: ITEMS_PER_PAGE
+	});
 	const scrollerRefs = useRef({});
+
+	const hasResults = useMemo(() => {
+		return items.movies.length > 0 ||
+			items.shows.length > 0 ||
+			items.episodes.length > 0 ||
+			items.people.length > 0;
+	}, [items]);
 
 	const getVisibleItems = useCallback((itemList, rowId) => {
 		const count = displayCounts[rowId] || ITEMS_PER_PAGE;
 		return itemList.slice(0, count);
 	}, [displayCounts]);
 
-	const rows = useMemo(() => {
-		const rowsData = [];
-		if (items.movies.length > 0) rowsData.push({id: 'movies', title: 'Movies', items: getVisibleItems(items.movies, 'movies'), totalCount: items.movies.length});
-		if (items.shows.length > 0) rowsData.push({id: 'shows', title: 'TV Shows', items: getVisibleItems(items.shows, 'shows'), totalCount: items.shows.length});
-		if (items.episodes.length > 0) rowsData.push({id: 'episodes', title: 'Episodes', items: getVisibleItems(items.episodes, 'episodes'), totalCount: items.episodes.length});
-		if (items.people.length > 0) rowsData.push({id: 'people', title: 'People', items: getVisibleItems(items.people, 'people'), totalCount: items.people.length});
-		return rowsData;
+	const visibleRows = useMemo(() => {
+		const rows = [];
+		if (items.movies.length > 0) rows.push({id: 'movies', title: 'Movies', items: getVisibleItems(items.movies, 'movies'), totalCount: items.movies.length});
+		if (items.shows.length > 0) rows.push({id: 'shows', title: 'TV Shows', items: getVisibleItems(items.shows, 'shows'), totalCount: items.shows.length});
+		if (items.episodes.length > 0) rows.push({id: 'episodes', title: 'Episodes', items: getVisibleItems(items.episodes, 'episodes'), totalCount: items.episodes.length});
+		if (items.people.length > 0) rows.push({id: 'people', title: 'People', items: getVisibleItems(items.people, 'people'), totalCount: items.people.length});
+		return rows;
 	}, [items, getVisibleItems]);
 
 	const loadMoreItems = useCallback((rowId) => {
@@ -47,27 +66,27 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 	const loadItems = useCallback(async () => {
 		setIsLoading(true);
 		try {
-			const result = await api.getItems({
-				Filters: 'IsFavorite',
-				Recursive: true,
-				IncludeItemTypes: 'Movie,Series,Episode',
-				Fields: 'PrimaryImageAspectRatio,ProductionYear,ParentIndexNumber,IndexNumber,SeriesName'
-			});
+			let allItems;
+			if (unifiedMode) {
+				allItems = await connectionPool.getFavoritesFromAllServers();
+			} else {
+				const result = await api.getItems({
+					Recursive: true,
+					Filters: 'IsFavorite',
+					IncludeItemTypes: 'Movie,Series,Episode,Person',
+					SortBy: 'SortName',
+					SortOrder: 'Ascending',
+					Fields: 'PrimaryImageAspectRatio,ProductionYear,ParentIndexNumber,IndexNumber,SeriesName'
+				});
+				allItems = result.Items || [];
+			}
 
-			const allItems = result.Items || [];
 			const categorized = {
 				movies: allItems.filter(item => item.Type === 'Movie'),
 				shows: allItems.filter(item => item.Type === 'Series'),
 				episodes: allItems.filter(item => item.Type === 'Episode'),
-				people: []
+				people: allItems.filter(item => item.Type === 'Person')
 			};
-
-			const peopleResult = await api.getItems({
-				Filters: 'IsFavorite',
-				IncludeItemTypes: 'Person',
-				Fields: 'PrimaryImageAspectRatio'
-			});
-			categorized.people = peopleResult.Items || [];
 
 			setItems(categorized);
 		} catch (err) {
@@ -75,16 +94,16 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [api]);
+	}, [api, unifiedMode]);
 
 	useEffect(() => {
 		loadItems();
 	}, [loadItems]);
 
-	const handleCardClick = useCallback((ev) => {
-		const itemId = ev.currentTarget?.dataset?.itemId;
-		const itemType = ev.currentTarget?.dataset?.itemType;
-		if (!itemId) return;
+	const handleCardClick = useCallback((e) => {
+		const card = e.currentTarget;
+		const itemId = card.dataset.itemId;
+		const itemType = card.dataset.itemType;
 
 		const allItems = [...items.movies, ...items.shows, ...items.episodes, ...items.people];
 		const item = allItems.find(i => i.Id === itemId);
@@ -99,35 +118,60 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 	}, [items, onSelectItem, onSelectPerson]);
 
 	const handleRowFocus = useCallback((rowId, totalCount) => {
-		return () => {
+		return (e) => {
+			const card = e.target.closest('[data-spotlight-id]');
 			const scroller = scrollerRefs.current[rowId];
-			if (scroller) {
-				const focusedElement = Spotlight.getCurrent();
-				if (focusedElement && scroller.contains(focusedElement)) {
-					const visibleCount = displayCounts[rowId] || ITEMS_PER_PAGE;
-					if (visibleCount < totalCount) {
-						loadMoreItems(rowId);
-					}
+			if (card && scroller) {
+				const cardRect = card.getBoundingClientRect();
+				const scrollerRect = scroller.getBoundingClientRect();
+				if (cardRect.left < scrollerRect.left) {
+					scroller.scrollLeft -= (scrollerRect.left - cardRect.left + 50);
+				} else if (cardRect.right > scrollerRect.right) {
+					scroller.scrollLeft += (cardRect.right - scrollerRect.right + 50);
+				}
+			}
+
+			const spotlightId = card?.dataset?.spotlightId || '';
+			const match = spotlightId.match(/item-(\d+)$/);
+			if (match) {
+				const itemIndex = parseInt(match[1], 10);
+				const currentDisplayCount = displayCounts[rowId] || ITEMS_PER_PAGE;
+				if (itemIndex >= currentDisplayCount - 3 && currentDisplayCount < totalCount) {
+					loadMoreItems(rowId);
 				}
 			}
 		};
 	}, [displayCounts, loadMoreItems]);
 
-	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (isBackKey(e)) {
-				onBack?.();
+	const handleRowKeyDown = useCallback((e) => {
+		const rowIndex = parseInt(e.currentTarget.dataset.rowIndex, 10);
+		if (e.keyCode === 38) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (rowIndex === 0) {
+				Spotlight.focus('nav-favorites');
+			} else if (rowIndex > 0) {
+				Spotlight.focus(`favorites-row-${rowIndex - 1}`);
 			}
-		};
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
-	}, [onBack]);
+		} else if (e.keyCode === 40) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (rowIndex < visibleRows.length - 1) {
+				Spotlight.focus(`favorites-row-${rowIndex + 1}`);
+			}
+		} else if (e.keyCode === 461 || e.keyCode === 8) {
+			e.preventDefault();
+			onBack?.();
+		}
+	}, [visibleRows.length, onBack]);
 
 	const renderCard = useCallback((item, index, rowId) => {
 		const isPerson = item.Type === 'Person';
 		const isEpisode = item.Type === 'Episode';
 		const imageId = getPrimaryImageId(item);
-		const imageUrl = imageId ? getImageUrl(serverUrl, imageId, 'Primary') : null;
+		// Support cross-server items with their own server URL
+		const itemServerUrl = item._serverUrl || serverUrl;
+		const imageUrl = imageId ? getImageUrl(itemServerUrl, imageId, 'Primary') : null;
 
 		let subtitle = '';
 		if (isEpisode) {
@@ -148,6 +192,9 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 				spotlightId={`${rowId}-item-${index}`}
 			>
 				<div className={`${css.cardImageWrapper} ${isPerson ? css.personImageWrapper : ''} ${isEpisode ? css.episodeImageWrapper : ''}`}>
+					{unifiedMode && item._serverName && (
+						<div className={css.serverBadge}>{item._serverName}</div>
+					)}
 					{imageUrl ? (
 						<ProxiedImage
 							className={`${css.cardImage} ${isPerson ? css.personImage : ''}`}
@@ -155,47 +202,48 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 							alt={item.Name}
 						/>
 					) : (
-						<div className={css.cardPlaceholder}>
-							<svg viewBox="0 0 24 24" className={css.placeholderIcon}>
-								<path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z" />
-							</svg>
-						</div>
+						<div className={css.cardPlaceholder}>{isPerson ? '👤' : '🎬'}</div>
 					)}
 				</div>
-				<div className={css.cardTitle}>{item.Name}</div>
-				{subtitle && <div className={css.cardSubtitle}>{subtitle}</div>}
+				<div className={css.cardInfo}>
+					<div className={css.cardTitle}>{item.Name}</div>
+					<div className={css.cardSubtitle}>{subtitle}</div>
+				</div>
 			</SpottableDiv>
 		);
-	}, [serverUrl, handleCardClick]);
+	}, [serverUrl, handleCardClick, unifiedMode]);
 
 	return (
-		<div className={css.page}>
-			<div className={css.pageHeader}>
+		<div className={css.favoritesContainer}>
+			<div className={css.header}>
 				<h1 className={css.title}>Favorites</h1>
 			</div>
 
 			<div className={css.favoritesResults}>
 				{isLoading ? (
-					<div className={css.loading}>
+					<div className={css.loadingIndicator}>
 						<LoadingSpinner />
+						<p>Loading favorites...</p>
 					</div>
-				) : rows.length === 0 ? (
-					<div className={css.empty}>
-						<div className={css.emptyIcon}>
-							<svg viewBox="0 0 24 24">
-								<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-							</svg>
-						</div>
-						<div className={css.emptyText}>No favorites yet</div>
+				) : !hasResults ? (
+					<div className={css.emptyState}>
+						<h2>No favorites yet</h2>
+						<p>Items you favorite will appear here</p>
 					</div>
 				) : (
-					rows.map((row) => (
-						<div key={row.id} className={css.resultRow}>
-							<RowContainer spotlightId={`row-${row.id}`}>
+					<div className={css.resultsContainer}>
+						{visibleRows.map((row, rowIndex) => (
+							<RowContainer
+								key={row.id}
+								className={css.resultRow}
+								spotlightId={`favorites-row-${rowIndex}`}
+								data-row-index={rowIndex}
+								onKeyDown={handleRowKeyDown}
+							>
 								<h2 className={css.rowTitle}>
 									{row.title}
 									{row.items.length < row.totalCount && (
-										<span className={css.loadMore}> (Showing {row.items.length} of {row.totalCount})</span>
+										<span className={css.rowCount}> ({row.items.length}/{row.totalCount})</span>
 									)}
 								</h2>
 								<div
@@ -204,12 +252,12 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 									onFocus={handleRowFocus(row.id, row.totalCount)}
 								>
 									<div className={css.resultItems}>
-										{row.items.map((item, index) => renderCard(item, index, row.id))}
+										{row.items.map((item, idx) => renderCard(item, idx, row.id))}
 									</div>
 								</div>
 							</RowContainer>
-						</div>
-					))
+						))}
+					</div>
 				)}
 			</div>
 		</div>
