@@ -511,7 +511,10 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, onB
 						src={backdropUrl}
 						className={css.backdropImage}
 						alt=""
-						style={{filter: settings.backdropBlurDetail > 0 ? `blur(${settings.backdropBlurDetail}px)` : 'none'}}
+						style={{
+							filter: settings.backdropBlurDetail > 0 ? `blur(${settings.backdropBlurDetail}px)` : 'none',
+							WebkitFilter: settings.backdropBlurDetail > 0 ? `blur(${settings.backdropBlurDetail}px)` : 'none'
+						}}
 					/>
 					<div className={css.backdropOverlay} />
 				</div>

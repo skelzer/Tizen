@@ -603,7 +603,10 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 						className={css.backdropImage}
 						src={backdropUrl}
 						alt=""
-						style={{filter: settings.backdropBlurHome > 0 ? `blur(${settings.backdropBlurHome}px)` : 'none'}}
+						style={{
+							filter: settings.backdropBlurHome > 0 ? `blur(${settings.backdropBlurHome}px)` : 'none',
+							WebkitFilter: settings.backdropBlurHome > 0 ? `blur(${settings.backdropBlurHome}px)` : 'none'
+						}}
 					/>
 				)}
 				<div className={css.backdropOverlay} />
