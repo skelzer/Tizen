@@ -87,9 +87,7 @@ const MediaCard = memo(function MediaCard({item, mediaType, onSelect, onFocus}) 
 					</div>
 				)}
 				{status && [3, 4, 5].includes(status) && (
-					<div className={`${css.availabilityBadge} ${css[`availability${status}`]}`}>
-						{status === 5 ? 'Available' : status === 4 ? 'Partial' : 'Processing'}
-					</div>
+					<div className={`${css.availabilityBadge} ${css[`availability${status}`]}`} />
 				)}
 			</div>
 		</SpottableDiv>
