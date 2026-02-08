@@ -178,16 +178,22 @@ export const getPlayMethod = (mediaSource, capabilities) => {
 		? ['mp4', 'mkv', 'matroska', 'ts', 'mpegts', 'm4v'].includes(container)
 		: true;
 
-	// Samsung spec tables: VP9 is WebM container only (all years)
+	// VP9 container support:
+	// Samsung spec tables officially list WebM only, but the official Jellyfin
+	// Web client (jellyfin-web) allows VP9 in MP4, MKV, and WebM on Tizen.
+	// The hardware VP9 decoder is container-agnostic; Tizen's media framework
+	// demuxes MKV/MP4/WebM equally well for VP9 content.
 	const vp9ContainerOk = videoCodec === 'vp9'
-		? container === 'webm'
+		? ['webm', 'mkv', 'matroska', 'mp4', 'm4v'].includes(container)
 		: true;
 
-	// Samsung spec tables: AV1 is WebM container only for most models.
-	// 8K Premium 2022+ (Tizen >= 6.5) also supports AV1 in general containers (MP4/MKV/TS/AVI).
+	// AV1 container support:
+	// Same as VP9 — the official Jellyfin client allows AV1 in MP4, MKV, and WebM.
+	// 8K Premium 2022+ models additionally support TS/AVI containers.
 	const av1GeneralContainers = capabilities.uhd8K && capabilities.tizenVersion >= 6.5;
 	const av1ContainerOk = videoCodec === 'av1'
-		? (container === 'webm' || (av1GeneralContainers && ['mp4', 'mkv', 'matroska', 'ts', 'mpegts', 'avi'].includes(container)))
+		? (['webm', 'mkv', 'matroska', 'mp4', 'm4v'].includes(container) ||
+			(av1GeneralContainers && ['ts', 'mpegts', 'avi'].includes(container)))
 		: true;
 
 	let hdrOk = true;

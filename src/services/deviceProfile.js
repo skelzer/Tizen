@@ -97,18 +97,52 @@ const detectYearFromModelName = (modelName) => {
 	const yearLetters = {
 		'K': 2016, 'M': 2017, 'N': 2018, 'R': 2019,
 		'T': 2020, 'A': 2021, 'B': 2022, 'C': 2023,
-		'D': 2024
+		'D': 2024, 'E': 2025
 	};
-	// Model format: prefix (UN/UE/QN/QE/GQ) + size + series + YEAR_LETTER + ...
-	// e.g., QN55Q60RAFXZA: after Q60, 'R' = 2019
-	// Also handles: QE55Q60RAT, GQ55Q60RGT, etc.
-	const match = modelName.match(/(?:UN|UE|QN|QE|GQ|UA|HG)\d{2,3}[A-Z]\w{1,4}([A-Z])/i);
-	if (match) {
-		const letter = match[1].toUpperCase();
-		if (yearLetters[letter]) {
-			return yearLetters[letter];
+
+	// Samsung has multiple model naming formats depending on product line:
+	//
+	// Format A - Crystal UHD / standard: prefix + size + YEAR + series
+	//   UA55DU7000 → D=2024, UN50TU7000 → T=2020
+	//   Pattern: (UN|UE|UA|HG)\d{2,3}([A-Z])\w+
+	//
+	// Format B - QLED / premium: prefix + size + series_category + series_num + YEAR + suffix
+	//   QN55Q60RAFXZA → R=2019, QE65Q80BATXXU → B=2022
+	//   Pattern: (QN|QE|GQ)\d{2,3}[A-Z]\d{1,3}([A-Z])
+
+	// Strategy: try each format and return the first valid year match
+	const patterns = [
+		// Format B (QLED/premium): year letter after series number
+		// e.g., QN55Q60RAFXZA: QN + 55 + Q + 60 + R(year) + AFXZA
+		/(?:QN|QE|GQ)\d{2,3}[A-Z]\d{1,3}([A-Z])/i,
+		// Format A (Crystal UHD/standard): year letter right after size digits
+		// e.g., UA55DU7000: UA + 55 + D(year) + U7000
+		/(?:UN|UE|UA|HG)\d{2,3}([A-Z])/i
+	];
+
+	for (const pattern of patterns) {
+		const match = modelName.match(pattern);
+		if (match) {
+			const letter = match[1].toUpperCase();
+			if (yearLetters[letter]) {
+				console.log(`[deviceProfile] Detected year letter '${letter}' (${yearLetters[letter]}) from model '${modelName}' using pattern ${pattern}`);
+				return yearLetters[letter];
+			}
 		}
 	}
+
+	// Fallback: scan all single letters in model name for any year letter match
+	// This handles unknown prefixes or unusual model strings
+	const letters = modelName.match(/[A-Z]/g);
+	if (letters) {
+		for (const letter of letters) {
+			if (yearLetters[letter]) {
+				console.log(`[deviceProfile] Detected year letter '${letter}' (${yearLetters[letter]}) from model '${modelName}' via fallback scan`);
+				return yearLetters[letter];
+			}
+		}
+	}
+
 	return null;
 };
 
@@ -354,21 +388,18 @@ export const getJellyfinDeviceProfile = async () => {
 	const caps = await getDeviceCapabilities();
 
 	// --- Video codecs per Samsung spec tables ---
-	// General containers (MP4/MKV/TS/AVI/MOV): H.264, HEVC
-	// WebM container only: VP9, AV1 (most models)
-	// Exception: 8K Premium 2022+ models support AV1 in general containers too
+	// Samsung specs officially list VP9/AV1 as WebM-only, but in practice
+	// Samsung TVs' hardware decoders handle VP9/AV1 in MKV containers fine.
+	// This is confirmed by users and matches behavior of other Jellyfin clients.
 	const generalVideoCodecs = ['h264'];
 	if (caps.hevc) generalVideoCodecs.push('hevc');
+	if (caps.vp9) generalVideoCodecs.push('vp9');
+	if (caps.av1) generalVideoCodecs.push('av1');
 
-	// WebM-only codecs per Samsung spec tables
+	// WebM-specific profile (VP9/AV1 with WebM audio codecs)
 	const webmVideoCodecs = [];
 	if (caps.vp9) webmVideoCodecs.push('vp9');
 	if (caps.av1) webmVideoCodecs.push('av1');
-
-	// For 8K Premium 2022+ models, AV1 is also available in general containers
-	if (caps.av1 && caps.uhd8K && caps.tizenVersion >= 6.5) {
-		generalVideoCodecs.push('av1');
-	}
 
 	// All supported video codecs (for HLS/transcode profiles)
 	const allVideoCodecs = [...generalVideoCodecs];
