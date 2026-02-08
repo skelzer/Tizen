@@ -348,7 +348,7 @@ const DiscoverRow = memo(function DiscoverRow({
 });
 
 const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSelectStudio, onBack}) => {
-	const {isAuthenticated, isEnabled} = useJellyseerr();
+	const {isAuthenticated, isEnabled, user: contextUser} = useJellyseerr();
 	const {settings} = useSettings();
 	const [rows, setRows] = useState({});
 	const [rowPages, setRowPages] = useState({});
@@ -380,8 +380,15 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 			if (!isAuthenticated) return;
 			setIsLoading(true);
 			try {
-				const currentUser = await jellyseerrApi.getUser().catch(() => null);
-				console.log('[JellyseerrDiscover] Current user:', currentUser?.id, currentUser?.username);
+				// In Moonfin mode, use context user data; otherwise try API
+				let currentUser = null;
+				if (contextUser?.jellyseerrUserId) {
+					currentUser = {id: contextUser.jellyseerrUserId, displayName: contextUser.displayName};
+					console.log('[JellyseerrDiscover] Using context user:', currentUser.id, currentUser.displayName);
+				} else {
+					currentUser = await jellyseerrApi.getUser().catch(() => null);
+					console.log('[JellyseerrDiscover] API user:', currentUser?.id, currentUser?.username);
+				}
 
 				const [
 					myRequestsData,
@@ -403,7 +410,16 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 					jellyseerrApi.upcomingTv(1).catch(() => ({results: []}))
 				]);
 
-				console.log('[JellyseerrDiscover] My requests loaded:', myRequestsData.results?.length || 0);
+				console.log('[JellyseerrDiscover] Data loaded:',
+					'requests:', myRequestsData?.results?.length || 0,
+					'trending:', trendingData?.results?.length || 0,
+					'movies:', moviesData?.results?.length || 0,
+					'tv:', tvData?.results?.length || 0,
+					'genreMovies:', genreMovies?.length || 0,
+					'genreTv:', genreTv?.length || 0,
+					'upMovies:', upcomingMoviesData?.results?.length || 0,
+					'upTv:', upcomingTvData?.results?.length || 0
+				);
 
 				setRows({
 					myRequests: myRequestsData.results || [],
@@ -447,7 +463,7 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 		} else {
 			setIsLoading(false);
 		}
-	}, [isAuthenticated]);
+	}, [isAuthenticated, contextUser]);
 
 	// Load more items for a specific row
 	const loadMoreForRow = useCallback(async (rowId) => {
