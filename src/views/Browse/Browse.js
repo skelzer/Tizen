@@ -39,6 +39,7 @@ const SpottableButton = Spottable('button');
 
 const Browse = ({
 	onSelectItem,
+	onSelectLibrary,
 	isVisible = true
 }) => {
 	const {api, serverUrl, accessToken, hasMultipleServers} = useAuth();
@@ -541,17 +542,20 @@ const Browse = ({
 				}
 
 				if (libs.length > 0) {
-					rowData.push({
-						id: 'library-tiles',
-						title: 'My Media',
-						items: libs.map(lib => ({
-							...lib,
-							Type: 'CollectionFolder',
-							isLibraryTile: true
-						})),
-						type: 'landscape',
-						isLibraryRow: true
-					});
+					const visibleLibs = libs.filter(lib => !EXCLUDED_COLLECTION_TYPES.includes(lib.CollectionType?.toLowerCase()));
+					if (visibleLibs.length > 0) {
+						rowData.push({
+							id: 'library-tiles',
+							title: 'My Media',
+							items: visibleLibs.map(lib => ({
+								...lib,
+								Type: 'CollectionFolder',
+								isLibraryTile: true
+							})),
+							type: 'landscape',
+							isLibraryRow: true
+						});
+					}
 				}
 
 				if (randomItems?.Items?.length > 0) {
@@ -647,17 +651,20 @@ const Browse = ({
 				}
 
 				if (libs.length > 0) {
-					completeRowData.push({
-						id: 'library-tiles',
-						title: 'My Media',
-						items: libs.map(lib => ({
-							...lib,
-							Type: 'CollectionFolder',
-							isLibraryTile: true
-						})),
-						type: 'landscape',
-						isLibraryRow: true
-					});
+					const visibleLibs = libs.filter(lib => !EXCLUDED_COLLECTION_TYPES.includes(lib.CollectionType?.toLowerCase()));
+					if (visibleLibs.length > 0) {
+						completeRowData.push({
+							id: 'library-tiles',
+							title: 'My Media',
+							items: visibleLibs.map(lib => ({
+								...lib,
+								Type: 'CollectionFolder',
+								isLibraryTile: true
+							})),
+							type: 'landscape',
+							isLibraryRow: true
+						});
+					}
 				}
 
 				setAllRowData(completeRowData);
@@ -758,8 +765,12 @@ const Browse = ({
 				rowIndex: lastFocusedRowRef.current
 			};
 		}
-		onSelectItem?.(item);
-	}, [onSelectItem]);
+		if (item.isLibraryTile) {
+			onSelectLibrary?.(item);
+		} else {
+			onSelectItem?.(item);
+		}
+	}, [onSelectItem, onSelectLibrary]);
 
 	const handleFeaturedPrev = useCallback(() => {
 		if (featuredItems.length <= 1) return;
