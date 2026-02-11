@@ -9,9 +9,9 @@ import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ProxiedImage from '../../components/ProxiedImage';
 import {getImageUrl} from '../../utils/helpers';
-import {isBackKey, TIZEN_KEYS} from '../../utils/tizenKeys';
 
 import css from './Search.module.less';
+import { TIZEN_KEYS } from '../../utils/tizenKeys';
 
 const SpottableInput = Spottable('input');
 const SpottableDiv = Spottable('div');
@@ -28,7 +28,7 @@ const SearchIcon = () => (
 	</svg>
 );
 
-const Search = ({onSelectItem, onSelectPerson, onBack}) => {
+const Search = ({onSelectItem, onSelectPerson}) => {
 	const {api, serverUrl, hasMultipleServers} = useAuth();
 	const {settings} = useSettings();
 	const unifiedMode = settings.unifiedLibraryMode && hasMultipleServers;
@@ -164,13 +164,8 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 			}
 		} else if (e.keyCode === TIZEN_KEYS.UP) {
 			e.preventDefault();
-		} else if (isBackKey(e)) {
-			if (!query) {
-				e.preventDefault();
-				onBack?.();
-			}
 		}
-	}, [visibleRows.length, query, onBack]);
+	}, [visibleRows.length]);
 
 	const handleRowKeyDown = useCallback((e) => {
 		const rowIndex = parseInt(e.currentTarget.dataset.rowIndex, 10);
@@ -188,11 +183,8 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 			if (rowIndex < visibleRows.length - 1) {
 				Spotlight.focus(`search-row-${rowIndex + 1}`);
 			}
-		} else if (isBackKey(e)) {
-			e.preventDefault();
-			onBack?.();
 		}
-	}, [visibleRows.length, onBack]);
+	}, [visibleRows.length]);
 
 	const handleClearSearch = useCallback(() => {
 		setQuery('');
@@ -331,9 +323,11 @@ const Search = ({onSelectItem, onSelectPerson, onBack}) => {
 				data-item-type="jellyfin"
 				spotlightId={`${rowId}-item-${index}`}
 			>
-				<div className={`${css.cardImageWrapper} ${isPerson ? css.personImageWrapper : ''} ${isEpisode ? css.episodeImageWrapper : ''}`}>				{unifiedMode && item._serverName && (
-					<div className={css.serverBadge}>{item._serverName}</div>
-				)}					{imageUrl ? (
+				<div className={`${css.cardImageWrapper} ${isPerson ? css.personImageWrapper : ''} ${isEpisode ? css.episodeImageWrapper : ''}`}>
+					{unifiedMode && item._serverName && (
+						<div className={css.serverBadge}>{item._serverName}</div>
+					)}
+					{imageUrl ? (
 						<img className={`${css.cardImage} ${isPerson ? css.personImage : ''}`} src={imageUrl} alt={item.Name} />
 					) : (
 						<div className={css.cardPlaceholder}>{isPerson ? '👤' : '🎬'}</div>
