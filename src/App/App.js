@@ -20,6 +20,7 @@ import {JellyseerrProvider} from '../context/JellyseerrContext';
 import {useVersionCheck} from '../hooks/useVersionCheck';
 import UpdateNotification from '../components/UpdateNotification';
 import NavBar from '../components/NavBar';
+import Sidebar from '../components/Sidebar';
 import AccountModal from '../components/AccountModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {registerKeys, ESSENTIAL_KEY_NAMES, isBackKey, TIZEN_KEYS} from '../utils/tizenKeys';
@@ -588,7 +589,20 @@ const AppContent = (props) => {
 
 	return (
 		<div className={panelIndex === PANELS.PLAYER ? css.appPlaying : css.app} {...props}>
-			{showNavBar && (
+			{showNavBar && settings.navbarPosition === 'left' ? (
+				<Sidebar
+					libraries={libraries}
+					onHome={handleHome}
+					onSearch={handleOpenSearch}
+					onShuffle={handleShuffle}
+					onGenres={handleOpenGenres}
+					onFavorites={handleOpenFavorites}
+					onDiscover={handleOpenJellyseerr}
+					onSettings={handleOpenSettings}
+					onSelectLibrary={handleSelectLibrary}
+					onUserMenu={handleOpenAccountModal}
+				/>
+			) : showNavBar ? (
 				<NavBar
 					activeView={getActiveView()}
 					libraries={libraries}
@@ -602,7 +616,7 @@ const AppContent = (props) => {
 					onSelectLibrary={handleSelectLibrary}
 					onUserMenu={handleOpenAccountModal}
 				/>
-			)}
+			) : null}
 			<Suspense fallback={<PanelLoader />}>
 				<Panels index={panelIndex} noCloseButton noAnimation>
 					<Panel>
