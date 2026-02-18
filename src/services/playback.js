@@ -209,14 +209,16 @@ const extractSubtitleStreams = (mediaSource, credentials = null) => {
 		});
 };
 
+const mapChapters = (chapters) => chapters.map((c, i) => ({
+	index: i,
+	name: c.Name || `Chapter ${i + 1}`,
+	startPositionTicks: c.StartPositionTicks,
+	imageTag: c.ImageTag
+}));
+
 const extractChapters = (mediaSource) => {
 	if (!mediaSource.Chapters) return [];
-	return mediaSource.Chapters.map((c, i) => ({
-		index: i,
-		name: c.Name || `Chapter ${i + 1}`,
-		startPositionTicks: c.StartPositionTicks,
-		imageTag: c.ImageTag
-	}));
+	return mapChapters(mediaSource.Chapters);
 };
 
 export const getPlaybackInfo = async (itemId, options = {}) => {
@@ -297,7 +299,11 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	const url = buildPlaybackUrl(itemId, mediaSource, playbackInfo.PlaySessionId, playMethod, creds, isAudio);
 	const audioStreams = extractAudioStreams(mediaSource);
 	const subtitleStreams = extractSubtitleStreams(mediaSource, creds);
-	const chapters = extractChapters(mediaSource);
+	// Chapters are a property of the Item, not MediaSource
+	let chapters = extractChapters(mediaSource);
+	if (chapters.length === 0 && options.item?.Chapters?.length > 0) {
+		chapters = mapChapters(options.item.Chapters);
+	}
 
 	currentSession = {
 		itemId,
@@ -396,6 +402,25 @@ export const fetchSubtitleData = async (subtitleStream) => {
 		console.error('[Playback] Failed to fetch subtitle data:', err);
 		return null;
 	}
+};
+
+/**
+ * Fetch chapters for an item. Chapters live on the Item object, not MediaSource.
+ */
+export const fetchItemChapters = async (itemId, item) => {
+	if (item?.Chapters?.length > 0) {
+		return mapChapters(item.Chapters);
+	}
+	try {
+		const api = item ? getApiForItem(item) : jellyfinApi.api;
+		const fullItem = await api.getItem(itemId);
+		if (fullItem?.Chapters?.length > 0) {
+			return mapChapters(fullItem.Chapters);
+		}
+	} catch (e) {
+		console.warn('[playback] Failed to fetch item chapters:', e.message);
+	}
+	return [];
 };
 
 export const getChapterImageUrl = (itemId, chapterIndex, width = 320) => {
@@ -732,6 +757,7 @@ export default {
 	getPlaybackUrl,
 	getSubtitleUrl,
 	fetchSubtitleData,
+	fetchItemChapters,
 	getChapterImageUrl,
 	getTrickplayInfo,
 	getMediaSegments,

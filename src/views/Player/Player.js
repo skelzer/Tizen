@@ -213,8 +213,24 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 	// Deferred seek: only execute actual avplaySeek after user stops pressing arrows
 	const seekDebounceRef = useRef(null);
 	const pendingSeekMsRef = useRef(null);
+	const subtitleTimeoutRef = useRef(null);
+	const useNativeSubtitleRef = useRef(false);
 	// Ref for the Player container DOM element — used to walk up ancestors for transparency
 	const playerContainerRef = useRef(null);
+
+	// Shared handler for AVPlay's onsubtitlechange callback
+	// setSilentSubtitle(true) hides native render and fires this with embedded subtitle text
+	const handleSubtitleChange = useCallback((dur, text, type) => {
+		if (useNativeSubtitleRef.current && type !== 1 && type !== '1') {
+			if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+			setCurrentSubtitleText(text || null);
+			if (text && dur > 0) {
+				subtitleTimeoutRef.current = setTimeout(() => {
+					setCurrentSubtitleText(null);
+				}, parseInt(dur, 10));
+			}
+		}
+	}, []);
 
 	const topButtons = useMemo(() => {
 		const buttons = [
@@ -366,7 +382,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			onevent: (eventType, eventData) => {
 				console.log('[Player] AVPlay event:', eventType, eventData);
 			},
-			onsubtitlechange: () => {},
+			onsubtitlechange: handleSubtitleChange,
 			ondrmevent: () => {}
 		});
 
@@ -392,7 +408,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 		// Start time update polling
 		startTimeUpdatePolling();
-	}, [startTimeUpdatePolling, stopTimeUpdatePolling]);
+	}, [startTimeUpdatePolling, stopTimeUpdatePolling, handleSubtitleChange]);
 
 	// ==============================
 	// Initialization
@@ -517,7 +533,13 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				// Set streams
 				setAudioStreams(result.audioStreams || []);
 				setSubtitleStreams(result.subtitleStreams || []);
-				setChapters(result.chapters || []);
+
+				// Chapters are an Item property, not MediaSource — result.chapters may be empty
+				let chapterList = result.chapters || [];
+				if (chapterList.length === 0) {
+					chapterList = await playback.fetchItemChapters(item.Id, item);
+				}
+				setChapters(chapterList);
 
 				// Handle initial audio selection
 				if (initialAudioIndex !== undefined && initialAudioIndex !== null) {
@@ -537,9 +559,8 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 				const loadSubtitleData = async (sub) => {
 					if (sub && sub.isEmbeddedNative) {
-						console.log('[Player] Initial: Using native embedded subtitle (codec:', sub.codec, ')');
-						const trackIndex = result.subtitleStreams ? result.subtitleStreams.indexOf(sub) : -1;
-						pendingSubAction = {type: 'native', trackIndex};
+				console.log('[Player] Initial: Using native embedded subtitle (codec:', sub.codec, ')');
+						pendingSubAction = {type: 'native', stream: sub};
 						setSubtitleTrackEvents(null);
 					} else if (sub && sub.isTextBased) {
 						pendingSubAction = {type: 'text'};
@@ -638,9 +659,9 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					onevent: (eventType, eventData) => {
 						console.log('[Player] AVPlay event:', eventType, eventData);
 					},
-					onsubtitlechange: () => {},
-					ondrmevent: () => {}
-				});
+					onsubtitlechange: handleSubtitleChange,
+				ondrmevent: () => {}
+			});
 
 				await avplayPrepare();
 				avplayReadyRef.current = true;
@@ -652,35 +673,82 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					runTimeRef.current = Math.floor(durationMs * 10000);
 				}
 
-				// Apply pending audio track setup (AVPlay must be in READY state)
-				if (pendingAudioIndex != null && result.playMethod !== playback.PlayMethod.Transcode) {
-					try {
-						avplaySelectTrack('AUDIO', pendingAudioIndex);
-						console.log('[Player] Applied initial audio track via AVPlay, index:', pendingAudioIndex);
-					} catch (audioErr) {
-						console.warn('[Player] Failed to apply initial audio track:', audioErr.message);
-					}
-				}
-
-				// Apply pending subtitle setup (AVPlay must be in READY state)
-				if (pendingSubAction) {
-					if (pendingSubAction.type === 'native' && pendingSubAction.trackIndex >= 0) {
-						avplaySelectTrack('SUBTITLE', pendingSubAction.trackIndex);
-						avplaySetSilentSubtitle(false);
-					} else {
-						avplaySetSilentSubtitle(true);
-					}
-				}
-
 				// Seek to start position if resuming
 				if (startPosition > 0) {
 					const seekMs = Math.floor(startPosition / 10000);
 					await avplaySeek(seekMs);
 				}
 
-				// Play
+				// Play — must be called BEFORE setSelectTrack, which requires PLAYING or PAUSED state
 				avplayPlay();
 				setIsPaused(false);
+
+				// Apply pending track selections (AVPlay must be in PLAYING/PAUSED state)
+				const trackInfo = (pendingAudioIndex != null || pendingSubAction) ? avplayGetTracks() : [];
+				const allTracks = Array.isArray(trackInfo) ? trackInfo : [];
+
+				if (pendingAudioIndex != null && result.playMethod !== playback.PlayMethod.Transcode) {
+					try {
+						// Map Jellyfin stream Index → AVPlay audio track index
+						const audioTracks = allTracks.filter(t => t.type === 'AUDIO');
+						const jellyfinAudioStreams = result.audioStreams || [];
+						const jellyfinPos = jellyfinAudioStreams.findIndex(s => s.index === pendingAudioIndex);
+						if (jellyfinPos >= 0 && jellyfinPos < audioTracks.length) {
+							const tizenAudioIndex = audioTracks[jellyfinPos].index;
+							avplaySelectTrack('AUDIO', tizenAudioIndex);
+							console.log('[Player] Applied initial audio track via AVPlay, jellyfinIndex:', pendingAudioIndex, 'tizenIndex:', tizenAudioIndex);
+						} else if (audioTracks.length > 0) {
+							avplaySelectTrack('AUDIO', pendingAudioIndex);
+							console.log('[Player] Applied initial audio track via AVPlay (direct), index:', pendingAudioIndex);
+						}
+					} catch (audioErr) {
+						console.warn('[Player] Failed to apply initial audio track:', audioErr.message);
+					}
+				}
+
+				if (pendingSubAction) {
+					if (pendingSubAction.type === 'native' && pendingSubAction.stream) {
+						let nativeApplied = false;
+						try {
+							// Samsung AVPlay API uses 'TEXT' (not 'SUBTITLE') for subtitle tracks
+							const subTracks = allTracks.filter(t => t.type === 'TEXT');
+							if (subTracks.length > 0) {
+								const embeddedStreams = (result.subtitleStreams || []).filter(s => s.isEmbeddedNative);
+								const embeddedIndex = embeddedStreams.indexOf(pendingSubAction.stream);
+								if (embeddedIndex >= 0 && embeddedIndex < subTracks.length) {
+									const tizenIndex = subTracks[embeddedIndex].index;
+									avplaySelectTrack('TEXT', tizenIndex);
+									// setSilentSubtitle(true) = hide native render + fire onsubtitlechange events
+									// setSilentSubtitle(false) = show native render + NO events (per Samsung docs)
+									avplaySetSilentSubtitle(true);
+									useNativeSubtitleRef.current = true;
+									nativeApplied = true;
+									console.log('[Player] Applied native embedded subtitle via TEXT track, tizenIndex:', tizenIndex);
+								}
+							}
+						} catch (err) {
+							console.warn('[Player] Native subtitle track mapping failed:', err);
+						}
+						if (!nativeApplied) {
+							console.log('[Player] Native subtitle failed, falling back to extraction');
+							useNativeSubtitleRef.current = false;
+							avplaySetSilentSubtitle(true);
+							try {
+								const data = await playback.fetchSubtitleData(pendingSubAction.stream);
+								if (data && data.TrackEvents) {
+									setSubtitleTrackEvents(data.TrackEvents);
+									console.log('[Player] Loaded', data.TrackEvents.length, 'subtitle events (fallback)');
+								}
+							} catch (fetchErr) {
+								console.error('[Player] Subtitle extraction fallback failed:', fetchErr);
+							}
+						}
+					} else if (pendingSubAction.type === 'text') {
+						avplaySetSilentSubtitle(true);
+					} else {
+						avplaySetSilentSubtitle(true);
+					}
+				}
 
 				// Report start and begin progress reporting
 				playback.reportStart(positionRef.current);
@@ -724,6 +792,11 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				clearTimeout(seekDebounceRef.current);
 				seekDebounceRef.current = null;
 			}
+			if (subtitleTimeoutRef.current) {
+				clearTimeout(subtitleTimeoutRef.current);
+				subtitleTimeoutRef.current = null;
+			}
+			useNativeSubtitleRef.current = false;
 			pendingSeekMsRef.current = null;
 		};
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -819,6 +892,14 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			}
 		}, 1000);
 	}, [handlePlayNextEpisode]);
+
+	useEffect(() => {
+		if (showSkipIntro && !activeModal) {
+			window.requestAnimationFrame(() => {
+				Spotlight.focus('skip-intro-btn');
+			});
+		}
+	}, [showSkipIntro, activeModal]);
 
 	// Start next episode countdown when credits detected
 	useEffect(() => {
@@ -980,15 +1061,24 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			// AVPlay: try switching audio track natively first
 			if (playMethod !== playback.PlayMethod.Transcode && avplayReadyRef.current) {
 				try {
-					avplaySelectTrack('AUDIO', index);
-					console.log('[Player] Switched audio track natively via AVPlay, index:', index);
+					// Map Jellyfin stream Index to AVPlay's audio track index
+					const trackInfo = avplayGetTracks();
+					const audioTracks = Array.isArray(trackInfo) ? trackInfo.filter(t => t.type === 'AUDIO') : [];
+					const jellyfinPos = audioStreams.findIndex(s => s.index === index);
+					if (jellyfinPos >= 0 && jellyfinPos < audioTracks.length) {
+						const tizenAudioIndex = audioTracks[jellyfinPos].index;
+						avplaySelectTrack('AUDIO', tizenAudioIndex);
+						console.log('[Player] Switched audio track natively, jellyfinIndex:', index, 'tizenIndex:', tizenAudioIndex);
+						return;
+					}
+						avplaySelectTrack('AUDIO', index);
+					console.log('[Player] Switched audio track natively (direct), index:', index);
 					return;
 				} catch (nativeErr) {
 					console.log('[Player] Native audio switch failed, reloading:', nativeErr.message);
 				}
 			}
 
-			// Fallback: re-request playback info and reload via AVPlay
 			const currentMs = avplayGetCurrentTime();
 			const currentPositionTicks = Math.floor(currentMs * 10000);
 
@@ -997,8 +1087,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				console.log('[Player] Switching audio track via stream reload for', playMethod, '- resuming from', currentPositionTicks);
 				positionRef.current = currentPositionTicks;
 				if (result.playMethod) setPlayMethod(result.playMethod);
-
-				// Restart AVPlay with new URL
 				await startAVPlayback(result.url, currentPositionTicks);
 				playback.reportStart(positionRef.current);
 				playback.startProgressReporting(() => positionRef.current);
@@ -1006,7 +1094,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		} catch (err) {
 			console.error('[Player] Failed to change audio:', err);
 		}
-	}, [playMethod, closeModal, startAVPlayback]);
+	}, [playMethod, closeModal, startAVPlayback, audioStreams]);
 
 	const handleSelectSubtitle = useCallback(async (e) => {
 		const index = parseInt(e.currentTarget.dataset.index, 10);
@@ -1015,6 +1103,8 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			setSelectedSubtitleIndex(-1);
 			setSubtitleTrackEvents(null);
 			setCurrentSubtitleText(null);
+			useNativeSubtitleRef.current = false;
+			if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
 			avplaySetSilentSubtitle(true);
 		} else {
 			setSelectedSubtitleIndex(index);
@@ -1023,22 +1113,20 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			let nativeSuccess = false;
 
 			if (stream && stream.isEmbeddedNative) {
-				// Try to use AVPlay's native track selection for embedded SRT
 				try {
 					const trackInfo = avplayGetTracks();
-					// Filter for subtitle tracks
-					const subTracks = Array.isArray(trackInfo) ? trackInfo.filter(t => t.type === 'SUBTITLE') : [];
+					// Samsung AVPlay API uses 'TEXT' (not 'SUBTITLE') for subtitle tracks
+					const subTracks = Array.isArray(trackInfo) ? trackInfo.filter(t => t.type === 'TEXT') : [];
 
 					if (subTracks.length > 0) {
-						// Only count embedded streams to match Tizen's list
 						const embeddedStreams = subtitleStreams.filter(s => s.isEmbeddedNative);
 						const embeddedIndex = embeddedStreams.indexOf(stream);
 
 						if (embeddedIndex >= 0 && embeddedIndex < subTracks.length) {
-							// Use the index from the Tizen object if possible
 							const tizenIndex = subTracks[embeddedIndex].index;
-							avplaySelectTrack('SUBTITLE', tizenIndex);
-							avplaySetSilentSubtitle(false);
+							avplaySelectTrack('TEXT', tizenIndex);
+							avplaySetSilentSubtitle(true);
+							useNativeSubtitleRef.current = true;
 							nativeSuccess = true;
 						}
 					}
@@ -1051,9 +1139,8 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				setSubtitleTrackEvents(null);
 				setCurrentSubtitleText(null);
 			} else if (stream && (stream.isTextBased || stream.isEmbeddedNative)) {
-				// Fallback to extraction (text-based) logic
-				// This runs if it's a text stream OR if it was an embedded native stream that failed the check above
-				avplaySetSilentSubtitle(true); // hide native subs, use custom overlay
+				useNativeSubtitleRef.current = false;
+				avplaySetSilentSubtitle(true);
 				try {
 					const data = await playback.fetchSubtitleData(stream);
 					if (data && data.TrackEvents) {
@@ -1513,7 +1600,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			{/* Skip Intro Button */}
 			{showSkipIntro && !isAudioMode && !activeModal && (
 				<div className={css.skipOverlay}>
-					<SpottableButton className={css.skipButton} onClick={handleSkipIntro}>
+					<SpottableButton className={css.skipButton} onClick={handleSkipIntro} spotlightId="skip-intro-btn">
 						Skip Intro
 					</SpottableButton>
 				</div>

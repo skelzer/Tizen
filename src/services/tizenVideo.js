@@ -462,11 +462,13 @@ export const avplayGetTracks = () => {
 export const avplaySelectTrack = (type, index) => {
 	if (!isAVPlayAvailable) return;
 	try {
-		// type: 'AUDIO' or 'SUBTITLE'
+		// type: 'AUDIO' or 'TEXT' (subtitle) — per Samsung AVPlayStreamType enum
+		// Requires PLAYING or PAUSED state (not READY)
 		webapis.avplay.setSelectTrack(type, index);
 		console.log(`[tizenVideo] Selected ${type} track index: ${index}`);
 	} catch (e) {
 		console.warn(`[tizenVideo] Failed to select ${type} track:`, e);
+		throw e;
 	}
 };
 
