@@ -352,6 +352,7 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 	const [rowHasMore, setRowHasMore] = useState({});
 	const [rowLoading, setRowLoading] = useState({});
 	const [isLoading, setIsLoading] = useState(true);
+	const [error, setError] = useState(null);
 	const [backdropUrl, setBackdropUrl] = useState('');
 	const [focusedItem, setFocusedItem] = useState(null);
 	const backdropTimeoutRef = useRef(null);
@@ -364,83 +365,82 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 		};
 	}, []);
 
+	const loadInitialData = useCallback(async () => {
+		if (!isAuthenticated) return;
+		setIsLoading(true);
+		setError(null);
+		try {
+			const apiUser = await jellyseerrApi.getUser().catch(() => null);
+			const currentUser = contextUser?.jellyseerrUserId
+				? {id: contextUser.jellyseerrUserId, ...apiUser}
+				: apiUser;
+			console.log('[JellyseerrDiscover] Current user:', currentUser?.id, currentUser?.username);
+
+			const [
+				myRequestsData,
+				trendingData,
+				moviesData,
+				tvData,
+				genreMovies,
+				genreTv,
+				upcomingMoviesData,
+				upcomingTvData
+			] = await Promise.all([
+				currentUser?.id ? jellyseerrApi.getMyRequests(currentUser.id, 50).catch((e) => { console.error('[JellyseerrDiscover] myRequests error:', e); return {results: []}; }) : {results: []},
+				jellyseerrApi.trending().catch(() => ({results: []})),
+				jellyseerrApi.trendingMovies(1).catch(() => ({results: []})),
+				jellyseerrApi.trendingTv(1).catch(() => ({results: []})),
+				jellyseerrApi.getGenreSliderMovies().catch(() => []),
+				jellyseerrApi.getGenreSliderTv().catch(() => []),
+				jellyseerrApi.upcomingMovies(1).catch(() => ({results: []})),
+				jellyseerrApi.upcomingTv(1).catch(() => ({results: []}))
+			]);
+
+			console.log('[JellyseerrDiscover] My requests loaded:', myRequestsData?.results?.length || 0);
+
+			setRows({
+				myRequests: myRequestsData?.results || [],
+				trending: (trendingData?.results || []).slice(0, ITEMS_PER_PAGE),
+				popularMovies: (moviesData?.results || []).slice(0, ITEMS_PER_PAGE),
+				popularTv: (tvData?.results || []).slice(0, ITEMS_PER_PAGE),
+				genreMovies: genreMovies || [],
+				genreTv: genreTv || [],
+				studios: MOVIE_STUDIOS,
+				networks: STREAMING_NETWORKS,
+				upcomingMovies: (upcomingMoviesData?.results || []).slice(0, ITEMS_PER_PAGE),
+				upcomingTv: (upcomingTvData?.results || []).slice(0, ITEMS_PER_PAGE)
+			});
+
+			setRowPages({
+				trending: 1,
+				popularMovies: 1,
+				popularTv: 1,
+				upcomingMovies: 1,
+				upcomingTv: 1
+			});
+
+			setRowHasMore({
+				trending: (trendingData?.results || []).length >= 20,
+				popularMovies: (moviesData?.results || []).length >= 20,
+				popularTv: (tvData?.results || []).length >= 20,
+				upcomingMovies: (upcomingMoviesData?.results || []).length >= 20,
+				upcomingTv: (upcomingTvData?.results || []).length >= 20
+			});
+		} catch (err) {
+			console.error('Failed to load Jellyseerr data:', err);
+			setError(`Failed to load data: ${err.message}`);
+		} finally {
+			setIsLoading(false);
+		}
+	}, [isAuthenticated, contextUser]);
+
 	useEffect(() => {
-		const loadInitialData = async () => {
-			if (!isAuthenticated) return;
-			setIsLoading(true);
-			try {
-				// Prefer context user (Moonfin) or fall back to API user
-				const apiUser = await jellyseerrApi.getUser().catch(() => null);
-				const currentUser = contextUser?.jellyseerrUserId
-					? {id: contextUser.jellyseerrUserId, ...apiUser}
-					: apiUser;
-				console.log('[JellyseerrDiscover] Current user:', currentUser?.id, currentUser?.username);
-
-				const [
-					myRequestsData,
-					trendingData,
-					moviesData,
-					tvData,
-					genreMovies,
-					genreTv,
-					upcomingMoviesData,
-					upcomingTvData
-				] = await Promise.all([
-					currentUser?.id ? jellyseerrApi.getMyRequests(currentUser.id, 50).catch((e) => { console.error('[JellyseerrDiscover] myRequests error:', e); return {results: []}; }) : {results: []},
-					jellyseerrApi.trending().catch(() => ({results: []})),
-					jellyseerrApi.trendingMovies(1).catch(() => ({results: []})),
-					jellyseerrApi.trendingTv(1).catch(() => ({results: []})),
-					jellyseerrApi.getGenreSliderMovies().catch(() => []),
-					jellyseerrApi.getGenreSliderTv().catch(() => []),
-					jellyseerrApi.upcomingMovies(1).catch(() => ({results: []})),
-					jellyseerrApi.upcomingTv(1).catch(() => ({results: []}))
-				]);
-
-				console.log('[JellyseerrDiscover] My requests loaded:', myRequestsData.results?.length || 0);
-
-				setRows({
-					myRequests: myRequestsData.results || [],
-					trending: (trendingData.results || []).slice(0, ITEMS_PER_PAGE),
-					popularMovies: (moviesData.results || []).slice(0, ITEMS_PER_PAGE),
-					popularTv: (tvData.results || []).slice(0, ITEMS_PER_PAGE),
-					genreMovies: genreMovies || [],
-					genreTv: genreTv || [],
-					studios: MOVIE_STUDIOS,
-					networks: STREAMING_NETWORKS,
-					upcomingMovies: (upcomingMoviesData.results || []).slice(0, ITEMS_PER_PAGE),
-					upcomingTv: (upcomingTvData.results || []).slice(0, ITEMS_PER_PAGE)
-				});
-
-				// Track pagination state
-				setRowPages({
-					trending: 1,
-					popularMovies: 1,
-					popularTv: 1,
-					upcomingMovies: 1,
-					upcomingTv: 1
-				});
-
-				// Track if more items available (API returns 20 per page, so if we got 20, there's likely more)
-				setRowHasMore({
-					trending: (trendingData.results || []).length >= 20,
-					popularMovies: (moviesData.results || []).length >= 20,
-					popularTv: (tvData.results || []).length >= 20,
-					upcomingMovies: (upcomingMoviesData.results || []).length >= 20,
-					upcomingTv: (upcomingTvData.results || []).length >= 20
-				});
-			} catch (err) {
-				console.error('Failed to load Jellyseerr data:', err);
-			} finally {
-				setIsLoading(false);
-			}
-		};
-
 		if (isAuthenticated) {
 			loadInitialData();
 		} else {
 			setIsLoading(false);
 		}
-	}, [isAuthenticated, contextUser]);
+	}, [isAuthenticated, contextUser, loadInitialData]);
 
 	// Load more items for a specific row
 	const loadMoreForRow = useCallback(async (rowId) => {
@@ -601,9 +601,16 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 				)}
 				<div className={css.backdropOverlay} />
 			</div>
-			{isLoading ? (
-				<LoadingSpinner />
-			) : (
+		{isLoading ? (
+			<LoadingSpinner />
+		) : error ? (
+			<div className={css.notConfigured}>
+				<p>{error}</p>
+				<SpottableDiv className={css.retryButton} onClick={loadInitialData}>
+					Retry
+				</SpottableDiv>
+			</div>
+		) : (
 				<div className={`${css.mainContent} ${settings.navbarPosition === 'left' ? css.sidebarOffset : ''}`}>
 					{/* Detail section for focused item - always present for consistent split view */}
 					<div className={css.detailSection}>

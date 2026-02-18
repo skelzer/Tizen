@@ -140,7 +140,7 @@ const moonfinRequest = (endpoint, options = {}) => {
 					try {
 						const decoded = atob(parsed.FileContents);
 						if (!decoded) {
-							resolve(null);
+							reject(new Error(`Empty FileContents for ${endpoint}`));
 							return;
 						}
 						const result = JSON.parse(decoded);
@@ -149,7 +149,7 @@ const moonfinRequest = (endpoint, options = {}) => {
 						resolve(result);
 					} catch (decodeErr) {
 						console.log('[Jellyseerr/Moonfin] FileContents decode failed for:', endpoint, decodeErr.message);
-						resolve(null);
+						reject(new Error(`FileContents decode failed for ${endpoint}: ${decodeErr.message}`));
 					}
 					return;
 				}
